@@ -61,12 +61,21 @@ Every request is logged regardless of outcome.
 | Component | Choice |
 |---|---|
 | Language | Python |
+| API / Backend | FastAPI (REST endpoints, auto-generated OpenAPI docs at `/docs`) |
 | Orchestration | LangChain |
 | LLM | OpenAI (structured outputs) |
-| Interface | Streamlit |
-| Schema and validation | Pydantic |
+| Frontend / UI | Streamlit (thin client that calls the FastAPI backend over HTTP) |
+| Schema and validation | Pydantic (shared as both the LLM output schema and the API request/response models) |
 | Storage | PostgreSQL |
 | Logging | Python logging module for system events, PostgreSQL table for ticket history |
+
+**Architecture (API-first):** All core logic lives behind the FastAPI backend; the Streamlit UI never talks to the LLM or the database directly, only to the API over HTTP. This keeps business logic reusable (any client can call it), testable (endpoints can be exercised with `curl`/pytest, independent of the UI), and cleanly separated from presentation.
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /classify` | Takes a raw ticket message, returns the structured `{category, priority, assigned_team, reasoning}` decision |
+| `GET /tickets` | Returns ticket history from PostgreSQL |
+| `GET /stats` | Returns aggregated metrics for the dashboard (volumes, priority mix, before/after timing) |
 
 ## 7. Version Roadmap
 
@@ -75,8 +84,8 @@ Every request is logged regardless of outcome.
 | Day | Version | Focus | Contents |
 |---|---|---|---|
 | 1 | v0 | Foundation | Domain story finalized, ticket format and JSON schema defined, category and team taxonomy defined, priority rules defined, few-shot prompt drafted with the three required edge cases, one raw API call made by hand to confirm the mechanism works end to end |
-| 2 | v1 | Core pipeline and dashboard | LangChain and the LLM wired together with structured output enforcement, few-shot prompt live against the finalized taxonomy, Streamlit form and result view, first version of the dashboard, PostgreSQL logging of every request. Covers roughly half of the evaluation criteria |
-| 3 | v1.1 | Full evaluation coverage | Complete three-layer retry strategy, all three required edge cases tested and passing, empty input, long input, and non-English input handled without crashing, API failure handled without crashing, consistency check demonstrated, secrets moved out of code, 20 demo tickets assembled, before and after timing comparison completed and shown on the dashboard, README written. This version alone can be demoed with no risk |
+| 2 | v1 | Core pipeline, API, and dashboard | LangChain and the LLM wired together with structured output enforcement, few-shot prompt live against the finalized taxonomy, exposed through the FastAPI backend (`POST /classify` first, then `GET /tickets` and `GET /stats`), Streamlit form and result view built as a client that consumes those endpoints, first version of the dashboard, PostgreSQL logging of every request. Covers roughly half of the evaluation criteria |
+| 3 | v1.1 | Full evaluation coverage | Complete three-layer retry strategy, all three required edge cases tested and passing, empty input, long input, and non-English input handled without crashing, LLM/API failure handled without crashing and surfaced as a clean error response from the endpoints, consistency check demonstrated, secrets moved out of code, 20 demo tickets assembled, before and after timing comparison completed and shown on the dashboard, README written. This version alone can be demoed with no risk |
 | 4 | v1.2 | Retrieval layer | Past resolved tickets embedded and stored, similarity search added so a new ticket can be checked against previously handled ones, shown as a separate reference panel alongside the main classification rather than replacing it. Outside the graded rubric, included to demonstrate initiative |
 | 5 to 7 | v1.3 onward | Enhancement backlog | Built in priority order if time allows: confidence aware routing (low confidence tickets flagged for human review instead of auto routed), cost and usage tracking per ticket shown on the dashboard, incident clustering (multiple similar tickets in a short window flagged as one probable incident). Kept as designed next steps rather than built this week: automatically drafted reply suggestions, a feedback loop for correcting misclassified tickets |
 
