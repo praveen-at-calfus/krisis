@@ -1,2 +1,2 @@
 # krisis
-A Smart Ticket Router
+A Smart Triage System
