@@ -1,9 +1,9 @@
-# KRISIS: A Smart Ticket Router
+# KRISIS: Your Smart Triage System
 ## Project Plan and Version Roadmap
 
 ## 1. Overview
 
-KRISIS is a smart ticket router built for the internal IT and engineering support desk of an AI-first software engineering and technology services company. Employees submit tickets covering access requests, infrastructure issues, CI/CD failures, security concerns, developer tooling problems, and hardware issues.
+KRISIS is a smart triage system built for the internal IT and engineering support desk of an AI-first software engineering and technology services company. Employees submit tickets covering access requests, infrastructure issues, CI/CD failures, security concerns, developer tooling problems, and hardware issues.
 
 Today, a human has to read every ticket and manually decide its category, urgency, and owning team before any actual work can begin. This first sorting step is repetitive, slow, and inconsistent between people. KRISIS automates it. Given a raw ticket message, it returns a structured decision: category, priority, assigned team, and a one line reasoning, so the ticket is already sorted by the time a human looks at it.
 

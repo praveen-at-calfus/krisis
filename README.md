@@ -1,2 +1,2 @@
 # krisis
-A Smart Triage System
+Your Smart Triage System
