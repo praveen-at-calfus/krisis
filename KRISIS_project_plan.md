@@ -65,7 +65,7 @@ Every request is logged regardless of outcome.
 | LLM | OpenAI (structured outputs) |
 | Interface | Streamlit |
 | Schema and validation | Pydantic |
-| Storage | SQLite |
+| Storage | PostgreSQL |
 | Logging | Python logging module for system events, SQLite table for ticket history |
 
 ## 7. Version Roadmap
