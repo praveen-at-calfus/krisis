@@ -2,6 +2,7 @@
 .env
 .env.*
 !.env.example
+eval.txt
 
 # Python virtual environments
 .venv/

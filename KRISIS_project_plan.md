@@ -36,13 +36,22 @@ Today, a human has to read every ticket and manually decide its category, urgenc
 
 ## 4. Priority Definition
 
-Priority is based on impact and whether the person is blocked, not on tone or wording. This is the rule that keeps an angry ticket from being scored as more urgent than a calm one describing the same problem.
+Priority is **computed, not guessed**, following the standard IT service-management model **Priority = Impact × Urgency**. It is based on impact and whether the person is blocked, never on tone or wording — this keeps an angry ticket from being scored as more urgent than a calm one describing the same problem. The model assesses the two axes; priority is then derived deterministically in code.
 
-| Priority | Definition |
-|---|---|
-| High | Service outage or core function unusable, no workaround available, a security incident, or something blocking multiple people or a critical workflow |
-| Medium | A feature is broken but a workaround exists, the issue affects a single person, or there is a real deadline attached |
-| Low | Cosmetic issue, feature request, general question, or anything with no functional impact |
+**Impact** — `broad`: multiple people, a whole team, a shared/customer-facing service, or core infra (auth, network, CI that blocks all merges). `narrow`: a single person or a small, non-critical scope.
+
+**Urgency** — `blocked`: cannot do core work and no usable workaround (or an imminent, externally-imposed deadline with no workaround). `workaround`: work can continue — a workaround exists, or the issue is non-blocking / cosmetic / a request or question. (A deadline is folded into urgency rather than being a separate trigger.)
+
+**Matrix:**
+
+| | blocked | workaround |
+|---|---|---|
+| **broad** | High | Medium |
+| **narrow** | Medium | Low |
+
+**Overrides (applied after the matrix):** a `security` incident is **High** regardless of scope; an `unclassified` ticket defaults to **Medium**, flagged for review.
+
+This is collision-free (every impact × urgency maps to exactly one tier), free of subjective triggers, and defensible — the full impact → urgency → matrix → priority chain can be shown for any ticket.
 
 ## 5. Prompt and Reliability Approach
 
