@@ -12,10 +12,10 @@ from typing import Tuple
 from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
 
-from .config import MAX_TICKET_CHARS, MODEL, OPENAI_API_KEY
-from .prompt import build_messages
-from .schema import RoutedTicket, TicketDecision
-from .taxonomy import PRIORITY_MATRIX, TAXONOMY
+from app.config import MAX_TICKET_CHARS, MODEL, OPENAI_API_KEY
+from app.prompt import build_messages
+from app.schema import RoutedTicket, TicketDecision
+from app.taxonomy import PRIORITY_MATRIX, TAXONOMY
 
 MAX_RETRIES = 2          # up to 3 total attempts (1 + 2 retries)
 _RETRY_BACKOFF_S = 0.5   # linear backoff between attempts

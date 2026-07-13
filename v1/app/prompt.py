@@ -3,7 +3,7 @@ import json
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
-from .taxonomy import IMPACT_LEVELS, TAXONOMY, URGENCY_LEVELS
+from app.taxonomy import IMPACT_LEVELS, TAXONOMY, URGENCY_LEVELS
 
 
 def build_system_prompt() -> str:
@@ -20,7 +20,7 @@ For each raw ticket, reason step by step, THEN commit:
 2. impact: choose one.
 3. urgency: choose one.
 4. category: choose exactly one.
-5. reasoning: one line naming the impact + urgency (and any tie-break) that drove the decision.
+5. reasoning: 2-3 full sentences that (a) name the key signal in the ticket, (b) explain the impact and urgency judgement and any tie-break, and (c) state the resulting category and how it routes. Be specific and complete, not a single terse line.
 
 You do NOT choose priority or the team. Priority is computed from impact x urgency, and the
 team is assigned from the category - both automatically, downstream. Judge on facts, not tone:
@@ -57,7 +57,7 @@ FEWSHOT = [
             "impact": "narrow",
             "urgency": "blocked",
             "category": "access_iam",
-            "reasoning": "narrow + blocked -> Medium; category access_iam (account lockout). Tone ignored per the impact-only rule.",
+            "reasoning": "The ticket describes a single user locked out of their own account with no workaround, so the impact is narrow and the urgency is blocked. The aggressive, all-caps tone does not change anything, since priority is driven by impact and blockage rather than wording. This is an individual credential problem, so it is categorised access_iam and, as narrow + blocked, resolves to Medium priority.",
         },
     },
     # Edge case 2 - very short / vague message
@@ -68,7 +68,7 @@ FEWSHOT = [
             "impact": "narrow",
             "urgency": "workaround",
             "category": "unclassified",
-            "reasoning": "Insufficient-detail rule -> unclassified with neutral defaults; priority set to Medium downstream, flagged for review.",
+            "reasoning": "The message gives no system, scope, or symptom, so there is no recognizable category signal to act on. Following the insufficient-detail rule, it is categorised unclassified with neutral defaults of narrow impact and workaround urgency. It is routed to Triage at Medium priority and flagged so a human can request the missing detail.",
         },
     },
     # Edge case 3 - could fit more than one category
@@ -79,7 +79,7 @@ FEWSHOT = [
             "impact": "narrow",
             "urgency": "blocked",
             "category": "access_iam",
-            "reasoning": "Fits ci_cd and access_iam; chose access_iam because the root cause is an unauthorized credential, not a pipeline defect. narrow + blocked -> Medium.",
+            "reasoning": "The symptom appears in the CI pipeline, but the root cause is an unauthorized SSH credential, which is an access/IAM problem rather than a pipeline defect. It affects one engineer who is blocked from pushing, so the impact is narrow and the urgency is blocked. Choosing root cause over symptom, it is categorised access_iam and resolves to Medium priority (narrow + blocked).",
         },
     },
 ]

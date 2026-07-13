@@ -9,7 +9,7 @@ from sqlalchemy.orm import (
     DeclarativeBase, Mapped, mapped_column, sessionmaker,
 )
 
-from .config import DATABASE_URL
+from app.config import DATABASE_URL
 
 
 class Base(DeclarativeBase):

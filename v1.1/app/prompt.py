@@ -3,7 +3,7 @@ import json
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
-from .taxonomy import IMPACT_LEVELS, TAXONOMY, URGENCY_LEVELS
+from app.taxonomy import IMPACT_LEVELS, TAXONOMY, URGENCY_LEVELS
 
 
 def build_system_prompt() -> str:
@@ -20,7 +20,7 @@ For each raw ticket, reason step by step, THEN commit:
 2. impact: choose one.
 3. urgency: choose one.
 4. category: choose exactly one.
-5. reasoning: one line naming the impact + urgency (and any tie-break) that drove the decision.
+5. reasoning: 2-3 full sentences that (a) name the key signal in the ticket, (b) explain the impact and urgency judgement and any tie-break, and (c) state the resulting category and how it routes. Be specific and complete, not a single terse line.
 
 You do NOT choose priority or the team. Priority is computed from impact x urgency, and the
 team is assigned from the category - both automatically, downstream. Judge on facts, not tone:
@@ -68,7 +68,7 @@ FEWSHOT = [
             "impact": "narrow",
             "urgency": "blocked",
             "category": "access_iam",
-            "reasoning": "narrow + blocked -> Medium; category access_iam (account lockout). Tone ignored per the impact-only rule.",
+            "reasoning": "The ticket describes a single user locked out of their own account with no workaround, so the impact is narrow and the urgency is blocked. The aggressive, all-caps tone does not change anything, since priority is driven by impact and blockage rather than wording. This is an individual credential problem, so it is categorised access_iam and, as narrow + blocked, resolves to Medium priority.",
         },
     },
     # Edge case 2 - very short / vague message
@@ -79,7 +79,7 @@ FEWSHOT = [
             "impact": "narrow",
             "urgency": "workaround",
             "category": "unclassified",
-            "reasoning": "Insufficient-detail rule -> unclassified with neutral defaults; priority set to Medium downstream, flagged for review.",
+            "reasoning": "The message gives no system, scope, or symptom, so there is no recognizable category signal to act on. Following the insufficient-detail rule, it is categorised unclassified with neutral defaults of narrow impact and workaround urgency. It is routed to Triage at Medium priority and flagged so a human can request the missing detail.",
         },
     },
     # Edge case 3 - could fit more than one category
@@ -90,7 +90,7 @@ FEWSHOT = [
             "impact": "narrow",
             "urgency": "blocked",
             "category": "access_iam",
-            "reasoning": "Fits ci_cd and access_iam; chose access_iam because the root cause is an unauthorized credential, not a pipeline defect. narrow + blocked -> Medium.",
+            "reasoning": "The symptom appears in the CI pipeline, but the root cause is an unauthorized SSH credential, which is an access/IAM problem rather than a pipeline defect. It affects one engineer who is blocked from pushing, so the impact is narrow and the urgency is blocked. Choosing root cause over symptom, it is categorised access_iam and resolves to Medium priority (narrow + blocked).",
         },
     },
     # Edge case 4 - brief BUT has a clear category signal -> classify, do NOT use unclassified
@@ -101,7 +101,7 @@ FEWSHOT = [
             "impact": "narrow",
             "urgency": "blocked",
             "category": "access_iam",
-            "reasoning": "Clear access signal despite brevity -> access_iam; one person blocked -> narrow + blocked -> Medium.",
+            "reasoning": "Although the ticket is brief, the word 'access' is a clear individual access/credentials signal, so it should be classified rather than sent to unclassified. One person cannot get in and no workaround is described, which makes the impact narrow and the urgency blocked. It is categorised access_iam and, as narrow + blocked, resolves to Medium priority.",
         },
     },
     # Edge case 5 - brief BUT scope word signals a broad outage -> infra_outage, not unclassified
@@ -112,7 +112,7 @@ FEWSHOT = [
             "impact": "broad",
             "urgency": "blocked",
             "category": "infra_outage",
-            "reasoning": "'entire' -> broad outage; no workaround -> broad + blocked -> High; category infra_outage.",
+            "reasoning": "The phrase 'entire system' signals a broad outage affecting everyone rather than a single user, so the impact is broad. With the system down and no workaround available, the urgency is blocked. A system being unavailable is an infrastructure failure, so it is categorised infra_outage and, as broad + blocked, resolves to High priority.",
         },
     },
     # Edge case 6 - an access SYSTEM being down is an OUTAGE (failure wins), not an individual access issue
@@ -123,7 +123,7 @@ FEWSHOT = [
             "impact": "broad",
             "urgency": "blocked",
             "category": "infra_outage",
-            "reasoning": "A system being down is an outage -> infra_outage (not access_iam, which is for an individual's access). broad + blocked -> High.",
+            "reasoning": "The access-control system itself is down, which is a shared service outage rather than one individual's access problem, so 'failure wins' and it belongs to infra_outage instead of access_iam. Because the outage blocks many users from authenticating, the impact is broad and the urgency is blocked. It is routed to Infrastructure operations at High priority (broad + blocked).",
         },
     },
 ]

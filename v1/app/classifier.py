@@ -6,10 +6,10 @@ from typing import Tuple
 
 from langchain_openai import ChatOpenAI
 
-from .config import MODEL, OPENAI_API_KEY
-from .prompt import build_messages
-from .schema import RoutedTicket, TicketDecision
-from .taxonomy import PRIORITY_MATRIX, TAXONOMY
+from app.config import MODEL, OPENAI_API_KEY
+from app.prompt import build_messages
+from app.schema import RoutedTicket, TicketDecision
+from app.taxonomy import PRIORITY_MATRIX, TAXONOMY
 
 
 @lru_cache(maxsize=1)

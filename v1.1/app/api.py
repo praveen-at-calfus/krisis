@@ -4,8 +4,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 
-from . import classifier, config, db
-from .schema import ClassifyRequest, RoutedTicket
+from app import classifier, config, db
+from app.schema import ClassifyRequest, RoutedTicket
 
 log = logging.getLogger("krisis.api")
 

@@ -19,7 +19,7 @@ class TicketDecision(BaseModel):
     impact: Impact = Field(..., description="broad = many people / shared or critical service; narrow = one person / small scope")
     urgency: Urgency = Field(..., description="blocked = no usable workaround; workaround = work can continue")
     category: Category = Field(..., description="One of the fixed taxonomy categories")
-    reasoning: str = Field(..., description="One line citing the impact + urgency that drove the decision")
+    reasoning: str = Field(..., description="2-3 sentences explaining the key signal in the ticket, the impact + urgency judgement (and any tie-break), and the resulting category/routing")
 
 
 class ClassifyRequest(BaseModel):
