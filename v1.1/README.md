@@ -4,7 +4,7 @@ Smart ticket triage: a raw ticket message in → a structured routing decision o
 (`category`, `priority`, `assigned_team`, `reasoning`).
 
 v1.1 builds on v1 and hardens it to be fully evaluable and demo-safe: a three-layer
-reliability strategy, edge-case handling, a consistency check, 20 demo tickets, and a
+reliability strategy, edge-case handling, a consistency check, 21 demo tickets, and a
 before/after timing comparison on the dashboard.
 
 ## Architecture (API-first)
@@ -26,12 +26,12 @@ v1.1/
 │   ├── config.py      # loads .env (walks up the tree); MAX_TICKET_CHARS, MANUAL_TRIAGE_SECONDS
 │   ├── taxonomy.py    # categories→teams, Impact×Urgency matrix, overrides
 │   ├── schema.py      # Pydantic: TicketDecision (LLM), ClassifyRequest, RoutedTicket
-│   ├── prompt.py      # few-shot prompt (5 examples) + LangChain messages
+│   ├── prompt.py      # few-shot prompt (6 examples) + LangChain messages
 │   ├── classifier.py  # LLM call + 3-layer retry/fallback; derive_priority()
 │   ├── db.py          # SQLAlchemy model; init_db, log_ticket, list_tickets, stats, timing
 │   └── api.py         # FastAPI: POST /classify, GET /tickets, /stats, /timing, /health
 ├── streamlit_app.py   # UI client + dashboard (incl. Time-saved panel)
-├── demo_tickets.py    # 20 labeled demo tickets
+├── demo_tickets.py    # 21 labeled demo tickets
 ├── scripts/           # run_demo.py, consistency_check.py, edge_cases.py
 ├── .env.example       # template for the shared root .env
 └── requirements.txt
@@ -103,7 +103,7 @@ Interactive API docs: <http://localhost:8000/docs>.
 ## Evaluation scripts (run from `v1.1/`)
 
 ```bash
-../.venv/bin/python scripts/run_demo.py           # classify all 20 demo tickets, log to DB, print table
+../.venv/bin/python scripts/run_demo.py           # classify all 21 demo tickets, log to DB, print table
 ../.venv/bin/python scripts/consistency_check.py  # same input x3 -> identical output (PASS/FAIL)
 ../.venv/bin/python scripts/edge_cases.py         # empty / long / non-English / simulated failure
 ```
@@ -115,7 +115,7 @@ comparison (manual @ 5 min/ticket vs actual latency).
 
 | Rubric line | Where it's covered |
 |---|---|
-| Valid JSON on 10+ inputs; all fields present | Structured output + `run_demo.py` (20 tickets) |
+| Valid JSON on 10+ inputs; all fields present | Structured output + `run_demo.py` (21 tickets) |
 | Consistent (same input → same output) | `temperature=0` + code-derived priority/team; `consistency_check.py` |
 | Edge cases: empty / long / non-English | `edge_cases.py`, input guards |
 | API failure handled without crashing | 3-layer retry → safe fallback; `edge_cases.py` |

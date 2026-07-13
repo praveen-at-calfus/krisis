@@ -5,8 +5,8 @@ Ported from v0.ipynb.
 """
 
 TAXONOMY = {
-    "access_iam":   {"team": "Identity and access",       "description": "Login, permissions, SSO, credential issues"},
-    "infra_outage": {"team": "Infrastructure operations", "description": "Server, network, or cloud infrastructure failures"},
+    "access_iam":   {"team": "Identity and access",       "description": "An individual's login, permissions, SSO, or credential problem - NOT a system-wide outage"},
+    "infra_outage": {"team": "Infrastructure operations", "description": "A system/service is down or unavailable (server, network, cloud, or a shared auth/SSO/access-control system being down)"},
     "ci_cd":        {"team": "Platform engineering",      "description": "Build and deployment pipeline failures"},
     "security":     {"team": "Security team",             "description": "Vulnerabilities, suspicious activity, security incidents"},
     "dev_tooling":  {"team": "Developer experience",      "description": "IDE, internal tools, environment setup issues"},

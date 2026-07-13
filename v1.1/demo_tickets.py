@@ -1,4 +1,4 @@
-"""20 diverse demo tickets for evaluation.
+"""21 diverse demo tickets for evaluation.
 
 Covers all 7 categories, the 3 required edge cases (angry / vague / ambiguous),
 non-English input, a very long ticket, and the two brief-but-clear regressions.
@@ -36,6 +36,9 @@ DEMO_TICKETS = [
      "expect_category": "infra_outage", "expect_priority": "High"},
     {"ticket": "my access is completely blocked",
      "expect_category": "access_iam", "expect_priority": "Medium"},
+    # access SYSTEM down = an outage (failure-wins disambiguation), not an individual access issue
+    {"ticket": "the access control system is down",
+     "expect_category": "infra_outage", "expect_priority": "High"},
 
     # --- non-English (Spanish): need access to the admin panel, can't get in ---
     {"ticket": "Necesito acceso al panel de administración, no puedo entrar.",
@@ -72,4 +75,4 @@ DEMO_TICKETS = [
      "expect_category": "infra_outage", "expect_priority": "High"},
 ]
 
-assert len(DEMO_TICKETS) == 20, f"expected 20 tickets, got {len(DEMO_TICKETS)}"
+assert len(DEMO_TICKETS) == 21, f"expected 21 tickets, got {len(DEMO_TICKETS)}"

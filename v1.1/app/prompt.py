@@ -50,6 +50,11 @@ Rules:
   urgency="workaround" (priority is set to Medium downstream).
 - Scope words like "everyone", "all", "entire", "company-wide" indicate broad impact.
 - A security incident is category "security" regardless of scope.
+- Outage vs individual access: if a ticket says a system, service, or platform is
+  down / unavailable / not responding / offline - INCLUDING an authentication, SSO, or
+  access-control SYSTEM - classify it as "infra_outage" (a service outage the infra team
+  restores). Use "access_iam" only for an INDIVIDUAL's access problem (e.g. "I can't log in",
+  "my access is blocked", "my permissions"), where no system-wide outage is described.
 - Tickets may be written in any language; classify them the same way.
 """
 
@@ -108,6 +113,17 @@ FEWSHOT = [
             "urgency": "blocked",
             "category": "infra_outage",
             "reasoning": "'entire' -> broad outage; no workaround -> broad + blocked -> High; category infra_outage.",
+        },
+    },
+    # Edge case 6 - an access SYSTEM being down is an OUTAGE (failure wins), not an individual access issue
+    {
+        "ticket": "the access control system is down",
+        "decision": {
+            "analysis": "The access-control SYSTEM itself is down - a shared service outage, not one person's access problem. It blocks many users from authenticating.",
+            "impact": "broad",
+            "urgency": "blocked",
+            "category": "infra_outage",
+            "reasoning": "A system being down is an outage -> infra_outage (not access_iam, which is for an individual's access). broad + blocked -> High.",
         },
     },
 ]
