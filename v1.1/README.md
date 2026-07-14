@@ -30,9 +30,10 @@ v1.1/
 │   ├── classifier.py  # LLM call + 3-layer retry/fallback; derive_priority()
 │   ├── db.py          # SQLAlchemy model; init_db, log_ticket, list_tickets, stats, timing
 │   └── api.py         # FastAPI: POST /classify, GET /tickets, /stats, /timing, /health
+├── run.py             # single-command launcher (API + UI together)
 ├── streamlit_app.py   # UI client + dashboard (incl. Time-saved panel)
 ├── demo_tickets.py    # 21 labeled demo tickets
-├── scripts/           # run_demo.py, consistency_check.py, edge_cases.py
+├── scripts/           # run_demo.py, consistency_check.py, edge_cases.py, interactive.py
 ├── .env.example       # template for the shared root .env
 └── requirements.txt
 ```
@@ -86,19 +87,26 @@ Every request is logged either way (`ok=True/False`, `attempts`, `error`, tokens
   cp v1.1/.env.example .env   # then edit OPENAI_API_KEY
   ```
 
-## Run (two terminals)
+## Run — single command (recommended)
+
+```bash
+cd ~/Projects/krisis/krisis/v1.1
+../.venv/bin/python run.py
+```
+Starts the API (`:8000`) and the Streamlit UI (`:8501`) together; **Ctrl-C stops both**.
+Override ports with env vars: `API_PORT=8010 UI_PORT=8511 ../.venv/bin/python run.py`.
+
+Interactive API docs: <http://localhost:8000/docs>. UI: <http://localhost:8501>.
+
+<details><summary>Alternative: two terminals</summary>
 
 ```bash
 # Terminal 1 — API
-cd ~/Projects/krisis/krisis/v1.1
-../.venv/bin/uvicorn app.api:app --reload
-
+cd ~/Projects/krisis/krisis/v1.1 && ../.venv/bin/uvicorn app.api:app --reload
 # Terminal 2 — UI
-cd ~/Projects/krisis/krisis/v1.1
-../.venv/bin/streamlit run streamlit_app.py     # opens http://localhost:8501
+cd ~/Projects/krisis/krisis/v1.1 && ../.venv/bin/streamlit run streamlit_app.py
 ```
-
-Interactive API docs: <http://localhost:8000/docs>.
+</details>
 
 ## Evaluation scripts (run from `v1.1/`)
 
@@ -106,6 +114,7 @@ Interactive API docs: <http://localhost:8000/docs>.
 ../.venv/bin/python scripts/run_demo.py           # classify all 21 demo tickets, log to DB, print table
 ../.venv/bin/python scripts/consistency_check.py  # same input x3 -> identical output (PASS/FAIL)
 ../.venv/bin/python scripts/edge_cases.py         # empty / long / non-English / simulated failure
+../.venv/bin/python scripts/interactive.py        # type a ticket, see the full result (no DB writes)
 ```
 
 `run_demo.py` populates the DB so the dashboard's **Time saved** panel shows the before/after
