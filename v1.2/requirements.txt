@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+langchain
+langchain-openai
+sqlalchemy
+psycopg[binary]
+streamlit
+python-dotenv
+requests
+pydantic
+openai
