@@ -1,6 +1,6 @@
 """PostgreSQL persistence via SQLAlchemy. Logs every classification request,
 and stores the resolved-ticket corpus + embeddings for the retrieval layer."""
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 import numpy as np
@@ -243,6 +243,44 @@ def search_similar_logs(query_embedding: List[float], k: int = 1) -> List[dict]:
         }
         for i in top
     ]
+
+
+def incident_status(threshold: int, window_min: int) -> dict:
+    """Incident alarm: are the most recent tickets a consecutive same-category spike?
+
+    Looks at the trailing run of identical categories ending at the newest ticket; each
+    ticket in the run must be within `window_min` of the newest (0 = ignore timing).
+    Alarms when the run length reaches `threshold`.
+    """
+    with SessionLocal() as session:
+        rows = session.execute(
+            select(TicketLog.category, TicketLog.created_at)
+            .where(TicketLog.category.is_not(None))
+            .order_by(TicketLog.created_at.desc())
+            .limit(200)
+        ).all()
+    if not rows:
+        return {"active": False, "count": 0, "threshold": threshold, "window_min": window_min}
+
+    newest_cat, newest_at = rows[0][0], rows[0][1]
+    cutoff = newest_at - timedelta(minutes=window_min) if window_min else None
+    run = 0
+    since = newest_at
+    for cat, at in rows:
+        if cat != newest_cat:
+            break
+        if cutoff is not None and at < cutoff:
+            break
+        run += 1
+        since = at
+    return {
+        "active": run >= threshold,
+        "category": newest_cat,
+        "count": run,
+        "threshold": threshold,
+        "window_min": window_min,
+        "since": since.isoformat() if since else None,
+    }
 
 
 def logs_missing_embeddings() -> List[dict]:

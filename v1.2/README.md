@@ -74,6 +74,7 @@ Every request is logged either way (`ok=True/False`, `attempts`, `error`, tokens
 | GET | `/stats` | Totals, category/priority breakdowns, avg latency, token totals, failures |
 | GET | `/timing` | Before/after: assumed manual triage time vs actual automated latency |
 | GET | `/similar?ticket=...&k=3` | Retrieval: most similar past resolved tickets (reference only; `[]` if corpus unseeded) |
+| GET | `/incidents` | Incident alarm: consecutive same-category spike state |
 | GET | `/health` | Liveness check |
 
 ## Retrieval layer (v1.2 Stage 1)
@@ -110,6 +111,14 @@ tickets. The reused answer carries `cached: true`, `source_ticket_id`, and `simi
 - The `/classify` response also returns `similar_past` — the most similar past **submitted**
   tickets (from `ticket_log`), which the Classify tab lists in a panel **even below the reuse
   threshold**, so you can see prior related tickets (the reused one is marked).
+
+## Incident clustering (v1.2)
+
+Raises an alarm when the ticket stream shows a **spike**: `INCIDENT_THRESHOLD` (default **3**)
+**consecutive** tickets in the **same category**, all within `INCIDENT_WINDOW_MIN` (default **30**)
+minutes. `GET /incidents` returns the state (`active`, `category`, `count`, `since`), and the
+Streamlit **dashboard shows a red alarm banner** when active. Tune via `INCIDENT_THRESHOLD` /
+`INCIDENT_WINDOW_MIN` (`INCIDENT_WINDOW_MIN=0` ignores timing).
 
 ---
 

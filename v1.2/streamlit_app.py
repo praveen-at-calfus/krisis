@@ -98,10 +98,19 @@ with tab_dashboard:
     try:
         stats = api_get("/stats")
         timing = api_get("/timing")
+        incident = api_get("/incidents")
         recent = api_get("/tickets", limit=50).get("tickets", [])
     except requests.RequestException as e:
         st.error(f"Could not load dashboard from {API_BASE}: {e}")
     else:
+        # Incident alarm: consecutive same-category spike
+        if incident.get("active"):
+            st.error(
+                f"🚨 Possible incident: {incident['count']} consecutive "
+                f"**{incident['category']}** tickets within {incident['window_min']} min "
+                f"(since {incident.get('since', '')[:16].replace('T', ' ')})."
+            )
+
         m1, m2, m3 = st.columns(3)
         m1.metric("Total tickets", stats.get("total", 0))
         m2.metric("Failures", stats.get("failures", 0))

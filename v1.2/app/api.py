@@ -124,6 +124,15 @@ def timing_endpoint() -> dict:
         raise HTTPException(status_code=503, detail=f"database unavailable: {e}")
 
 
+@app.get("/incidents")
+def incidents_endpoint() -> dict:
+    """Incident clustering: alarm when recent tickets are a consecutive same-category spike."""
+    try:
+        return db.incident_status(config.INCIDENT_THRESHOLD, config.INCIDENT_WINDOW_MIN)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=503, detail=f"database unavailable: {e}")
+
+
 @app.get("/similar")
 def similar_endpoint(ticket: str, k: int = config.SIMILAR_K) -> dict:
     """Retrieval: past resolved tickets most similar to `ticket` (reference only).

@@ -41,3 +41,8 @@ SIMILAR_K = int(os.getenv("SIMILAR_K", "3"))
 # cosine-similar, reuse its classification instead of calling the LLM again.
 CACHE_ENABLED = os.getenv("CACHE_ENABLED", "1") not in ("0", "false", "False")
 CACHE_THRESHOLD = float(os.getenv("CACHE_THRESHOLD", "0.92"))
+
+# Incident clustering (v1.2): alarm when this many consecutive tickets share a category
+# within this time window (a spike). Set INCIDENT_WINDOW_MIN=0 to ignore timing.
+INCIDENT_THRESHOLD = int(os.getenv("INCIDENT_THRESHOLD", "3"))
+INCIDENT_WINDOW_MIN = int(os.getenv("INCIDENT_WINDOW_MIN", "30"))
