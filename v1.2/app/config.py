@@ -36,3 +36,8 @@ MANUAL_TRIAGE_SECONDS = int(os.getenv("MANUAL_TRIAGE_SECONDS", "300"))
 # Retrieval layer (v1.2): embeddings model + how many similar tickets to return.
 EMBED_MODEL = os.getenv("EMBED_MODEL", "text-embedding-3-small")
 SIMILAR_K = int(os.getenv("SIMILAR_K", "3"))
+
+# Semantic classification cache (v1.2): if a past ticket_log entry is at least this
+# cosine-similar, reuse its classification instead of calling the LLM again.
+CACHE_ENABLED = os.getenv("CACHE_ENABLED", "1") not in ("0", "false", "False")
+CACHE_THRESHOLD = float(os.getenv("CACHE_THRESHOLD", "0.92"))

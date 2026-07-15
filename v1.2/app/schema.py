@@ -1,5 +1,5 @@
 """Pydantic models shared across the LLM call and the API contract."""
-from typing import Literal
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -36,3 +36,7 @@ class RoutedTicket(BaseModel):
     # surfaced for transparency (defensible priority); not part of the minimal contract
     impact: Impact
     urgency: Urgency
+    # cache provenance (set when the answer was reused from a near-duplicate past ticket)
+    cached: bool = False
+    source_ticket_id: Optional[int] = None
+    similarity: Optional[float] = None

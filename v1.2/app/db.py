@@ -5,7 +5,8 @@ from typing import List, Optional
 
 import numpy as np
 from sqlalchemy import (
-    JSON, Boolean, DateTime, Integer, String, Text, create_engine, func, select,
+    JSON, Boolean, DateTime, Float, Integer, String, Text, create_engine, func,
+    select, text,
 )
 from sqlalchemy.orm import (
     DeclarativeBase, Mapped, mapped_column, sessionmaker,
@@ -38,6 +39,10 @@ class TicketLog(Base):
     latency_ms: Mapped[Optional[int]] = mapped_column(Integer)
     ok: Mapped[bool] = mapped_column(Boolean, default=True)
     error: Mapped[Optional[str]] = mapped_column(Text)
+    # semantic cache: embedding of the ticket + provenance when an answer was reused
+    embedding: Mapped[Optional[list]] = mapped_column(JSON)  # list[float]
+    reused_from_id: Mapped[Optional[int]] = mapped_column(Integer)
+    similarity: Mapped[Optional[float]] = mapped_column(Float)
 
     def to_dict(self) -> dict:
         return {
@@ -56,6 +61,8 @@ class TicketLog(Base):
             "latency_ms": self.latency_ms,
             "ok": self.ok,
             "error": self.error,
+            "reused_from_id": self.reused_from_id,
+            "similarity": self.similarity,
         }
 
 
@@ -78,8 +85,13 @@ SessionLocal = sessionmaker(bind=engine, expire_on_commit=False, future=True)
 
 
 def init_db() -> None:
-    """Create tables if they don't exist. Called on API startup."""
+    """Create tables if they don't exist, then add any newer columns to an
+    already-existing ticket_log (no Alembic; ADD COLUMN IF NOT EXISTS is idempotent)."""
     Base.metadata.create_all(engine)
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE ticket_log ADD COLUMN IF NOT EXISTS embedding JSONB"))
+        conn.execute(text("ALTER TABLE ticket_log ADD COLUMN IF NOT EXISTS reused_from_id INTEGER"))
+        conn.execute(text("ALTER TABLE ticket_log ADD COLUMN IF NOT EXISTS similarity DOUBLE PRECISION"))
 
 
 def log_ticket(**fields) -> int:
@@ -198,3 +210,59 @@ def search_similar(query_embedding: List[float], k: int) -> List[dict]:
         }
         for i in top
     ]
+
+
+# --- Semantic classification cache over ticket_log --------------------------
+
+def search_similar_logs(query_embedding: List[float], k: int = 1) -> List[dict]:
+    """Most cosine-similar PAST successful classifications from ticket_log.
+    Only rows that (a) succeeded (ok) and (b) have an embedding are candidates."""
+    with SessionLocal() as session:
+        rows = session.execute(
+            select(TicketLog).where(TicketLog.ok.is_(True), TicketLog.embedding.is_not(None))
+        ).scalars().all()
+    if not rows:
+        return []
+    mat = np.array([r.embedding for r in rows], dtype=float)
+    q = np.array(query_embedding, dtype=float)
+    mat_norm = mat / (np.linalg.norm(mat, axis=1, keepdims=True) + 1e-12)
+    q_norm = q / (np.linalg.norm(q) + 1e-12)
+    scores = mat_norm @ q_norm
+    top = np.argsort(scores)[::-1][:k]
+    return [
+        {
+            "score": round(float(scores[i]), 4),
+            "id": rows[i].id,
+            "ticket_text": rows[i].ticket_text,
+            "category": rows[i].category,
+            "priority": rows[i].priority,
+            "assigned_team": rows[i].assigned_team,
+            "impact": rows[i].impact,
+            "urgency": rows[i].urgency,
+            "reasoning": rows[i].reasoning,
+        }
+        for i in top
+    ]
+
+
+def logs_missing_embeddings() -> List[dict]:
+    """[{id, ticket_text}] for successful log rows that have no embedding yet (for backfill)."""
+    with SessionLocal() as session:
+        rows = session.execute(
+            select(TicketLog.id, TicketLog.ticket_text)
+            .where(TicketLog.ok.is_(True), TicketLog.embedding.is_(None))
+        ).all()
+    return [{"id": r[0], "ticket_text": r[1]} for r in rows]
+
+
+def set_log_embeddings(id_to_vec: dict) -> int:
+    """Backfill: set embeddings for the given {log_id: vector}. Returns rows updated."""
+    with SessionLocal() as session:
+        n = 0
+        for row in session.execute(
+            select(TicketLog).where(TicketLog.id.in_(list(id_to_vec)))
+        ).scalars().all():
+            row.embedding = id_to_vec[row.id]
+            n += 1
+        session.commit()
+        return n

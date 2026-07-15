@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 
-from app import classifier, config, db, retrieval
+from app import classifier, config, db, embeddings, retrieval
 from app.schema import ClassifyRequest, RoutedTicket
 
 log = logging.getLogger("krisis.api")
@@ -24,7 +24,9 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="KRISIS", version="1.0", lifespan=lifespan)
 
 
-def _log_success(ticket: str, routed: RoutedTicket, meta: dict) -> None:
+def _log(ticket: str, routed: RoutedTicket, meta: dict, embedding=None) -> None:
+    """Best-effort log of every request, including its embedding (for the cache) and,
+    on a cache hit, the source ticket + similarity."""
     try:
         db.log_ticket(
             ticket_text=ticket,
@@ -38,17 +40,14 @@ def _log_success(ticket: str, routed: RoutedTicket, meta: dict) -> None:
             prompt_tokens=meta.get("prompt_tokens"),
             completion_tokens=meta.get("completion_tokens"),
             latency_ms=meta.get("latency_ms"),
-            ok=True,
+            ok=meta.get("ok", True),   # fix: honor fallback outcome (was hardcoded True)
+            error=meta.get("error"),
+            embedding=embedding,
+            reused_from_id=meta.get("source_ticket_id"),
+            similarity=meta.get("similarity"),
         )
     except Exception as e:  # noqa: BLE001
         log.warning("failed to log ticket: %s", e)
-
-
-def _log_failure(ticket: str, error: str) -> None:
-    try:
-        db.log_ticket(ticket_text=ticket, ok=False, error=error)
-    except Exception as e:  # noqa: BLE001
-        log.warning("failed to log failure: %s", e)
 
 
 @app.get("/health")
@@ -61,12 +60,37 @@ def classify_endpoint(req: ClassifyRequest) -> RoutedTicket:
     ticket = (req.ticket or "").strip()
     if not ticket:
         raise HTTPException(status_code=422, detail="ticket must not be empty")
+
+    # Embed once — used both for the cache lookup and stored on the log row.
+    embedding = None
     try:
-        routed, meta = classifier.classify(ticket)
-    except Exception as e:  # noqa: BLE001 — surface a clean error, never a 500 stack
-        _log_failure(ticket, str(e))
-        raise HTTPException(status_code=502, detail=f"classification failed: {e}")
-    _log_success(ticket, routed, meta)
+        embedding = embeddings.embed_text(ticket[: config.MAX_TICKET_CHARS])
+    except Exception as e:  # noqa: BLE001 — embedding is best-effort; fall through to LLM
+        log.warning("embedding failed (no cache this request): %s", e)
+
+    # Semantic cache: if a near-duplicate was already classified, reuse it and skip the LLM.
+    if config.CACHE_ENABLED and embedding is not None:
+        try:
+            matches = db.search_similar_logs(embedding, k=1)
+        except Exception as e:  # noqa: BLE001
+            matches = []
+            log.warning("cache lookup failed: %s", e)
+        if matches and matches[0]["score"] >= config.CACHE_THRESHOLD:
+            m = matches[0]
+            routed = RoutedTicket(
+                category=m["category"], priority=m["priority"],
+                assigned_team=m["assigned_team"], reasoning=m["reasoning"],
+                impact=m["impact"], urgency=m["urgency"],
+                cached=True, source_ticket_id=m["id"], similarity=m["score"],
+            )
+            _log(ticket, routed,
+                 {"ok": True, "source_ticket_id": m["id"], "similarity": m["score"]},
+                 embedding)
+            return routed
+
+    # Cache miss -> classify with the LLM (classify() never raises; it falls back safely).
+    routed, meta = classifier.classify(ticket)
+    _log(ticket, routed, meta, embedding)
     return routed
 
 

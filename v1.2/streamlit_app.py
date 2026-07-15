@@ -45,6 +45,11 @@ with tab_classify:
             else:
                 if resp.status_code == 200:
                     d = resp.json()
+                    if d.get("cached"):
+                        st.success(
+                            f"♻️ Answer reused from ticket #{d['source_ticket_id']} "
+                            f"(similarity {d['similarity']:.2f}) — no LLM call, time & tokens saved."
+                        )
                     c1, c2, c3 = st.columns(3)
                     c1.metric("Category", d["category"])
                     c2.metric("Priority", PRIORITY_COLOR.get(d["priority"], d["priority"]))

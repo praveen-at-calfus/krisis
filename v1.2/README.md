@@ -92,6 +92,22 @@ changes the routing decision.
   ```
   Until seeded, `/similar` returns `[]` and the panel shows a hint (no wasted embedding calls).
 
+## Semantic classification cache (v1.2)
+
+`POST /classify` embeds each ticket and compares it against **past successful classifications**
+in `ticket_log`. If a prior ticket is at least `CACHE_THRESHOLD` cosine-similar (default **0.92**),
+its answer is **reused and the LLM call is skipped** — saving time and tokens on near-duplicate
+tickets. The reused answer carries `cached: true`, `source_ticket_id`, and `similarity` in the
+`/classify` response, and the Streamlit result shows a "♻️ reused" banner.
+
+- Only successful (`ok=true`) past rows are cache sources; fallbacks are never reused.
+- Every ticket's embedding is stored on its `ticket_log` row (so it can serve future lookups).
+- **Backfill embeddings for pre-existing rows** so they can serve as cache sources:
+  ```bash
+  cd ~/Projects/krisis/krisis/v1.2 && ../.venv/bin/python scripts/backfill_embeddings.py
+  ```
+- Tune with env vars: `CACHE_THRESHOLD=0.95` (stricter) or `CACHE_ENABLED=0` (off).
+
 ---
 
 ## Prerequisites (one-time)
@@ -141,6 +157,7 @@ cd ~/Projects/krisis/krisis/v1.2 && ../.venv/bin/streamlit run streamlit_app.py
 ../.venv/bin/python scripts/edge_cases.py         # empty / long / non-English / simulated failure
 ../.venv/bin/python scripts/interactive.py        # type a ticket, see the full result (no DB writes)
 ../.venv/bin/python scripts/seed_resolved.py      # seed the retrieval corpus (one-time, paid embeddings)
+../.venv/bin/python scripts/backfill_embeddings.py # embed existing ticket_log rows for the cache (one-time)
 ```
 
 `run_demo.py` populates the DB so the dashboard's **Time saved** panel shows the before/after
