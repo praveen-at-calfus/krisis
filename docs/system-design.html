@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KRISIS — System Design</title>
+<style>
+  :root{
+    --ground:#f6f7f9; --surface:#ffffff; --surface-2:#f0f2f6;
+    --ink:#141922; --muted:#5a6472; --border:#e2e6ec;
+    --transport:#2563eb;              /* API / HTTP */
+    --judgment:#7c3aed;               /* LLM */
+    --mapping:#0d9488;                /* deterministic code */
+    --storage:#475569;               /* Postgres */
+    --external:#c2760a;              /* OpenAI */
+    --alarm:#dc2626;                 /* incident / fallback */
+    --shadow:0 1px 2px rgba(20,25,34,.06),0 6px 18px rgba(20,25,34,.05);
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --ground:#0e1116; --surface:#171b22; --surface-2:#1e232c;
+      --ink:#e7eaf0; --muted:#9aa4b2; --border:#28303b;
+      --transport:#5b8bff; --judgment:#a985f5; --mapping:#2dd4bf;
+      --storage:#94a3b8; --external:#e0a13a; --alarm:#f87171;
+      --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 22px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="dark"]{
+    --ground:#0e1116; --surface:#171b22; --surface-2:#1e232c;
+    --ink:#e7eaf0; --muted:#9aa4b2; --border:#28303b;
+    --transport:#5b8bff; --judgment:#a985f5; --mapping:#2dd4bf;
+    --storage:#94a3b8; --external:#e0a13a; --alarm:#f87171;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 22px rgba(0,0,0,.35);
+  }
+  :root[data-theme="light"]{
+    --ground:#f6f7f9; --surface:#ffffff; --surface-2:#f0f2f6;
+    --ink:#141922; --muted:#5a6472; --border:#e2e6ec;
+    --transport:#2563eb; --judgment:#7c3aed; --mapping:#0d9488;
+    --storage:#475569; --external:#c2760a; --alarm:#dc2626;
+    --shadow:0 1px 2px rgba(20,25,34,.06),0 6px 18px rgba(20,25,34,.05);
+  }
+
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);
+    line-height:1.5;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1080px;margin:0 auto;padding:clamp(1.25rem,4vw,3rem)}
+
+  header{margin-bottom:2rem}
+  .eyebrow{font:600 .72rem/1 var(--mono);letter-spacing:.18em;text-transform:uppercase;
+    color:var(--transport);margin:0 0 .7rem}
+  h1{font-size:clamp(1.7rem,4.5vw,2.6rem);font-weight:800;letter-spacing:-.02em;
+    margin:0 0 .5rem;text-wrap:balance}
+  .thesis{font-size:clamp(1rem,2.2vw,1.15rem);color:var(--muted);max-width:62ch;margin:0}
+  .thesis b{color:var(--ink);font-weight:650}
+
+  h2{font-size:1.15rem;font-weight:750;letter-spacing:-.01em;margin:2.6rem 0 1rem;
+    display:flex;align-items:center;gap:.55rem}
+  h2 .tick{width:.55rem;height:1.15rem;border-radius:2px;background:var(--transport);display:inline-block}
+
+  /* legend */
+  .legend{display:flex;flex-wrap:wrap;gap:.5rem .9rem;margin:1.1rem 0 0}
+  .chip{display:inline-flex;align-items:center;gap:.42rem;font:600 .78rem/1 var(--sans);
+    color:var(--muted)}
+  .dot{width:.7rem;height:.7rem;border-radius:50%;flex:none}
+
+  /* flow */
+  .flow{display:flex;gap:.6rem;align-items:stretch;margin-top:.5rem}
+  .stage{flex:1;min-width:0;background:var(--surface);border:1px solid var(--border);
+    border-radius:14px;padding:1rem;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:.6rem}
+  .stage h3{margin:0;font-size:.82rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:700}
+  .node{border:1px solid var(--border);border-radius:10px;padding:.6rem .7rem;background:var(--surface-2)}
+  .node .t{font-weight:700;font-size:.95rem}
+  .node .d{font-size:.82rem;color:var(--muted);margin-top:.15rem}
+  .node.accent{border-left:3px solid var(--transport)}
+  .node.ext{border-left:3px solid var(--external)}
+  .node.store{border-left:3px solid var(--storage)}
+  .arrow{display:flex;align-items:center;justify-content:center;color:var(--muted);
+    font-size:1.4rem;flex:none;width:1.4rem}
+  code,.mono{font-family:var(--mono);font-size:.8em}
+  .stage code{background:var(--surface-2);padding:.05em .35em;border-radius:5px;border:1px solid var(--border)}
+
+  /* pipeline */
+  .pipeline{display:flex;flex-direction:column;gap:.55rem}
+  .step{display:grid;grid-template-columns:2rem 1fr;gap:.85rem;align-items:start;
+    background:var(--surface);border:1px solid var(--border);border-left:4px solid var(--border);
+    border-radius:12px;padding:.8rem .95rem;box-shadow:var(--shadow)}
+  .step .num{width:2rem;height:2rem;border-radius:50%;display:grid;place-items:center;
+    font:700 .95rem/1 var(--mono);background:var(--surface-2);color:var(--muted);border:1px solid var(--border)}
+  .step .body .t{font-weight:700;font-size:1rem}
+  .step .body .d{color:var(--muted);font-size:.88rem;margin-top:.15rem}
+  .step.judgment{border-left-color:var(--judgment)}
+  .step.judgment .num{color:#fff;background:var(--judgment);border-color:transparent}
+  .step.mapping{border-left-color:var(--mapping)}
+  .step.mapping .num{color:#fff;background:var(--mapping);border-color:transparent}
+  .pill{display:inline-block;font:700 .66rem/1 var(--mono);letter-spacing:.04em;text-transform:uppercase;
+    padding:.28em .5em;border-radius:6px;margin-left:.4rem;vertical-align:middle;border:1px solid transparent}
+  .pill.j{color:var(--judgment);border-color:color-mix(in srgb,var(--judgment) 40%,transparent);
+    background:color-mix(in srgb,var(--judgment) 12%,transparent)}
+  .pill.m{color:var(--mapping);border-color:color-mix(in srgb,var(--mapping) 40%,transparent);
+    background:color-mix(in srgb,var(--mapping) 12%,transparent)}
+  .pill.x{color:var(--external);border-color:color-mix(in srgb,var(--external) 40%,transparent);
+    background:color-mix(in srgb,var(--external) 12%,transparent)}
+  .pill.s{color:var(--storage);border-color:color-mix(in srgb,var(--storage) 45%,transparent);
+    background:color-mix(in srgb,var(--storage) 14%,transparent)}
+  .pill.a{color:var(--alarm);border-color:color-mix(in srgb,var(--alarm) 40%,transparent);
+    background:color-mix(in srgb,var(--alarm) 12%,transparent)}
+  .ret{margin-top:.7rem;font-family:var(--mono);font-size:.82rem;color:var(--muted)}
+  .ret b{color:var(--mapping)}
+
+  /* split callout */
+  .split{display:grid;grid-template-columns:1fr 1fr;gap:.9rem;margin-top:1rem}
+  .split>div{border-radius:12px;padding:1rem;border:1px solid var(--border);background:var(--surface);box-shadow:var(--shadow)}
+  .split .jj{border-top:3px solid var(--judgment)}
+  .split .mm{border-top:3px solid var(--mapping)}
+  .split h4{margin:.1rem 0 .5rem;font-size:.95rem}
+  .split .jj h4{color:var(--judgment)} .split .mm h4{color:var(--mapping)}
+  .split ul{margin:0;padding-left:1.1rem;font-size:.88rem;color:var(--muted)}
+  .split li{margin:.2rem 0}
+
+  /* matrix */
+  .matrix-wrap{overflow-x:auto}
+  table.matrix{border-collapse:separate;border-spacing:6px;font-family:var(--mono);margin-top:.4rem}
+  table.matrix th{font-size:.74rem;color:var(--muted);font-weight:700;padding:.3rem .5rem;text-transform:uppercase;letter-spacing:.05em}
+  table.matrix td{width:118px;text-align:center;padding:.7rem .5rem;border-radius:9px;font-weight:800;color:#fff}
+  .p-high{background:var(--alarm)} .p-med{background:#d98a1f} .p-low{background:#2f9e63}
+  .overrides{font-size:.85rem;color:var(--muted);margin-top:.7rem}
+  .overrides code{font-family:var(--mono);background:var(--surface-2);padding:.05em .35em;border-radius:5px;border:1px solid var(--border)}
+
+  /* features */
+  .features{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:.75rem;margin-top:.5rem}
+  .feat{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:.9rem;box-shadow:var(--shadow)}
+  .feat .h{font-weight:750;font-size:.95rem;display:flex;align-items:center;gap:.45rem}
+  .feat .h .d{width:.6rem;height:.6rem;border-radius:50%}
+  .feat p{margin:.35rem 0 0;font-size:.85rem;color:var(--muted)}
+
+  footer{margin-top:2.6rem;padding-top:1rem;border-top:1px solid var(--border);
+    font-size:.82rem;color:var(--muted)}
+  footer .mono{font-family:var(--mono)}
+
+  @media (max-width:760px){
+    .flow{flex-direction:column}
+    .arrow{width:auto;height:1.4rem;transform:rotate(90deg)}
+    .split{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <p class="eyebrow">KRISIS · System Design</p>
+    <h1>How a raw ticket becomes a routed decision</h1>
+    <p class="thesis">The core idea: <b>let the model judge, let code decide.</b> The LLM reads the ticket and assesses it; deterministic code turns that assessment into the parts that must never drift — <b>priority and team</b>.</p>
+    <div class="legend" aria-label="Colour legend">
+      <span class="chip"><span class="dot" style="background:var(--judgment)"></span>LLM · judgment</span>
+      <span class="chip"><span class="dot" style="background:var(--mapping)"></span>Code · deterministic mapping</span>
+      <span class="chip"><span class="dot" style="background:var(--transport)"></span>API · transport</span>
+      <span class="chip"><span class="dot" style="background:var(--external)"></span>OpenAI · external model</span>
+      <span class="chip"><span class="dot" style="background:var(--storage)"></span>PostgreSQL · storage</span>
+      <span class="chip"><span class="dot" style="background:var(--alarm)"></span>Alarm / fallback</span>
+    </div>
+  </header>
+
+  <h2><span class="tick"></span>Request flow — API-first</h2>
+  <div class="flow">
+    <div class="stage">
+      <h3>Clients (thin, HTTP-only)</h3>
+      <div class="node accent"><div class="t">Employee → Classify</div><div class="d">Streamlit form: paste a ticket, get a routed card</div></div>
+      <div class="node accent"><div class="t">Manager → Dashboard</div><div class="d">Metrics, cost, incident alarm, review queue</div></div>
+    </div>
+    <div class="arrow" aria-hidden="true">▸</div>
+    <div class="stage">
+      <h3>FastAPI backend — all business logic</h3>
+      <div class="node"><div class="t">Endpoints</div><div class="d"><code>/classify</code> · <code>/tickets</code> · <code>/stats</code> · <code>/timing</code> · <code>/similar</code> · <code>/incidents</code> · <code>/health</code></div></div>
+      <div class="node"><div class="t">Classify pipeline</div><div class="d">Validate → embed → cache → LLM → derive → log (see below)</div></div>
+    </div>
+    <div class="arrow" aria-hidden="true">▸</div>
+    <div class="stage">
+      <h3>Models &amp; storage</h3>
+      <div class="node ext"><div class="t">OpenAI</div><div class="d"><code>gpt-4o-mini</code> (classify) · <code>text-embedding-3-small</code> (embed)</div></div>
+      <div class="node store"><div class="t">PostgreSQL</div><div class="d"><code>ticket_log</code> (+embeddings, cost) · <code>resolved_ticket</code> corpus</div></div>
+    </div>
+  </div>
+
+  <h2><span class="tick" style="background:var(--judgment)"></span>Inside <code style="font-size:.85em">POST /classify</code></h2>
+  <div class="pipeline">
+    <div class="step">
+      <div class="num">1</div>
+      <div class="body"><div class="t">Validate input <span class="pill a">guard</span></div>
+        <div class="d">Empty or &gt;20k chars → clean <code>422</code>. Over-long input is truncated — never a crash.</div></div>
+    </div>
+    <div class="step">
+      <div class="num">2</div>
+      <div class="body"><div class="t">Embed the ticket <span class="pill x">OpenAI</span></div>
+        <div class="d">One vector, reused for both the cache check and the similar-tickets panel.</div></div>
+    </div>
+    <div class="step">
+      <div class="num">3</div>
+      <div class="body"><div class="t">Semantic cache lookup <span class="pill s">Postgres</span></div>
+        <div class="d">Cosine-match past tickets. If ≥ 0.92 similar → <b>reuse the prior answer and skip the LLM</b> (time + tokens saved).</div></div>
+    </div>
+    <div class="step judgment">
+      <div class="num">4</div>
+      <div class="body"><div class="t">Classify with the LLM <span class="pill j">judgment</span> <span class="pill x">OpenAI</span></div>
+        <div class="d">Structured output — the model reasons then commits: <code>analysis → impact → urgency → category → reasoning → confidence</code>. Reliability: enforce schema → retry with the error fed back → <span style="color:var(--alarm)">safe fallback</span>.</div></div>
+    </div>
+    <div class="step mapping">
+      <div class="num">5</div>
+      <div class="body"><div class="t">Derive in code <span class="pill m">deterministic</span></div>
+        <div class="d"><code>priority</code> = Impact × Urgency matrix (+ overrides) · <code>assigned_team</code> = taxonomy lookup · <code>needs_review</code> = low confidence or unclassified.</div></div>
+    </div>
+    <div class="step">
+      <div class="num">6</div>
+      <div class="body"><div class="t">Log everything <span class="pill s">Postgres</span></div>
+        <div class="d">Answer + embedding + tokens/cost + cache provenance + confidence — powering the dashboard, cache, and incident alarm.</div></div>
+    </div>
+  </div>
+  <p class="ret">↳ returns <b>{ category, priority, assigned_team, reasoning, confidence, needs_review }</b></p>
+
+  <h2><span class="tick" style="background:var(--mapping)"></span>Why the split matters</h2>
+  <div class="split">
+    <div class="jj">
+      <h4>LLM decides (judgment)</h4>
+      <ul>
+        <li><b>category</b> — which of 7 buckets</li>
+        <li><b>impact</b> — broad vs narrow</li>
+        <li><b>urgency</b> — blocked vs workaround</li>
+        <li><b>reasoning + confidence</b></li>
+      </ul>
+    </div>
+    <div class="mm">
+      <h4>Code decides (deterministic)</h4>
+      <ul>
+        <li><b>priority</b> — from the matrix, never guessed</li>
+        <li><b>assigned_team</b> — from the category</li>
+        <li><b>needs_review</b> — from confidence</li>
+        <li>→ consistent, defensible, can't mismatch</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2><span class="tick" style="background:#d98a1f"></span>Priority = Impact × Urgency</h2>
+  <div class="matrix-wrap">
+    <table class="matrix">
+      <tr><th></th><th>blocked</th><th>workaround</th></tr>
+      <tr><th>broad</th><td class="p-high">High</td><td class="p-med">Medium</td></tr>
+      <tr><th>narrow</th><td class="p-med">Medium</td><td class="p-low">Low</td></tr>
+    </table>
+  </div>
+  <p class="overrides">Overrides applied after the matrix: <code>security → High</code> · <code>unclassified → Medium</code>. Priority follows <b>impact &amp; blockage, not tone</b> — an angry ticket never outranks a calm, more severe one.</p>
+
+  <h2><span class="tick"></span>Capabilities layered around the core</h2>
+  <div class="features">
+    <div class="feat"><div class="h"><span class="d" style="background:var(--transport)"></span>Semantic cache</div><p>Near-duplicate tickets reuse a prior answer and skip the LLM.</p></div>
+    <div class="feat"><div class="h"><span class="d" style="background:var(--transport)"></span>Retrieval (RAG)</div><p>Shows similar past resolved tickets and how they were fixed.</p></div>
+    <div class="feat"><div class="h"><span class="d" style="background:var(--judgment)"></span>Confidence-aware routing</div><p>Low-confidence tickets flagged for human review, not auto-trusted.</p></div>
+    <div class="feat"><div class="h"><span class="d" style="background:var(--alarm)"></span>Incident clustering</div><p>A same-category spike raises a dismissible dashboard alarm.</p></div>
+    <div class="feat"><div class="h"><span class="d" style="background:#d98a1f"></span>Cost tracking</div><p>Per-ticket $ and cache savings, on the dashboard.</p></div>
+    <div class="feat"><div class="h"><span class="d" style="background:var(--alarm)"></span>Reliability</div><p>Retry → safe fallback; the API never crashes on a bad response.</p></div>
+  </div>
+
+  <footer>
+    <span class="mono">Stack:</span> Python · FastAPI · LangChain · OpenAI · Streamlit · Pydantic · PostgreSQL (SQLAlchemy + Alembic) · numpy · pytest &nbsp;•&nbsp; <span class="mono">temperature=0</span> for run-to-run consistency.
+  </footer>
+</div>
+</body>
+</html>

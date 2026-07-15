@@ -4,6 +4,9 @@
 !.env.example
 eval.txt
 
+# Local-only pitch notes (keep out of the repo)
+PITCH.md
+
 # Python virtual environments
 .venv/
 venv/
