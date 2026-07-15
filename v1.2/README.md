@@ -117,8 +117,10 @@ tickets. The reused answer carries `cached: true`, `source_ticket_id`, and `simi
 Raises an alarm when the ticket stream shows a **spike**: `INCIDENT_THRESHOLD` (default **3**)
 **consecutive** tickets in the **same category**, all within `INCIDENT_WINDOW_MIN` (default **30**)
 minutes. `GET /incidents` returns the state (`active`, `category`, `count`, `since`), and the
-Streamlit **dashboard shows a red alarm banner** when active. Tune via `INCIDENT_THRESHOLD` /
-`INCIDENT_WINDOW_MIN` (`INCIDENT_WINDOW_MIN=0` ignores timing).
+**Dashboard** (the managing-team view) shows a **pulsing red alarm banner (dismissible)** when
+active — the Classify/employee tab is unaffected. Dismiss hides the current incident; a new or
+different incident re-alarms. Tune via `INCIDENT_THRESHOLD` / `INCIDENT_WINDOW_MIN`
+(`INCIDENT_WINDOW_MIN=0` ignores timing).
 
 ---
 

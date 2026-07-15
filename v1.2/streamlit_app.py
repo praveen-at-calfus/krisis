@@ -25,6 +25,38 @@ def api_post(path: str, payload: dict):
 st.title("🛎️ KRISIS — Your Smart Triage System")
 st.caption(f"Client of the FastAPI backend at `{API_BASE}`")
 
+
+def render_incident_banner(inc: dict):
+    """Pulsing red alarm for the managing team (Dashboard only), with a dismiss control.
+    Dismissal is per-incident: a new/different incident re-alarms."""
+    if not inc.get("active"):
+        return
+    key = f"{inc.get('category')}::{inc.get('since')}"
+    if st.session_state.get("dismissed_incident") == key:
+        return
+    since = (inc.get("since") or "")[:16].replace("T", " ")
+    st.markdown(
+        f"""
+        <style>
+        @keyframes krisisPulse {{ 0%{{opacity:1}} 50%{{opacity:.4}} 100%{{opacity:1}} }}
+        .krisis-alarm {{
+            background:#b00020; color:#fff; padding:16px 20px; border-radius:10px;
+            font-weight:800; font-size:1.15rem; text-align:center; margin:4px 0 10px 0;
+            box-shadow:0 0 14px rgba(176,0,32,.6); animation:krisisPulse 1s ease-in-out infinite;
+        }}
+        </style>
+        <div class="krisis-alarm">
+            🚨 POSSIBLE INCIDENT — {inc['count']} consecutive <u>{inc['category']}</u> tickets
+            within {inc['window_min']} min (since {since}). Investigate now.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    if st.button("Dismiss alarm", key="dismiss_incident_btn"):
+        st.session_state["dismissed_incident"] = key
+        st.rerun()
+
+
 tab_classify, tab_dashboard = st.tabs(["Classify a ticket", "Dashboard"])
 
 # ---------------------------------------------------------------- Classify
@@ -103,13 +135,8 @@ with tab_dashboard:
     except requests.RequestException as e:
         st.error(f"Could not load dashboard from {API_BASE}: {e}")
     else:
-        # Incident alarm: consecutive same-category spike
-        if incident.get("active"):
-            st.error(
-                f"🚨 Possible incident: {incident['count']} consecutive "
-                f"**{incident['category']}** tickets within {incident['window_min']} min "
-                f"(since {incident.get('since', '')[:16].replace('T', ' ')})."
-            )
+        # Incident alarm — managing team only (Dashboard), dismissible
+        render_incident_banner(incident)
 
         m1, m2, m3 = st.columns(3)
         m1.metric("Total tickets", stats.get("total", 0))
