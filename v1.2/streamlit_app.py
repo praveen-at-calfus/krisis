@@ -162,6 +162,14 @@ with tab_dashboard:
         t2.metric("KRISIS (actual)", f"{timing.get('automated_total_seconds', 0):.1f} s")
         t3.metric("Time saved", _mins(timing.get("time_saved_seconds", 0)))
 
+        # Cost tracking
+        st.subheader("💰 LLM cost")
+        k1, k2, k3 = st.columns(3)
+        k1.metric("Total cost", f"${stats.get('total_cost_usd', 0):.4f}")
+        k2.metric("Avg / ticket", f"${stats.get('avg_cost_per_ticket_usd', 0):.5f}")
+        k3.metric("Saved by cache (est.)", f"${stats.get('est_cost_saved_usd', 0):.4f}",
+                  help=f"{stats.get('cache_hits', 0)} cache hits skipped the LLM")
+
         col_a, col_b = st.columns(2)
         with col_a:
             st.subheader("By priority")
@@ -182,7 +190,8 @@ with tab_dashboard:
                         "team": r["assigned_team"],
                         "conf": r.get("confidence"),
                         "review": "⚠️" if r.get("needs_review") else "",
-                        "ok": r["ok"],
+                        "cost $": f"{r.get('cost_usd', 0):.5f}",
+                        "status": "✓" if r["ok"] else "⚠ fallback",
                     }
                     for r in recent
                 ],

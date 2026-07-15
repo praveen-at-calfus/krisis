@@ -12,7 +12,14 @@ from sqlalchemy.orm import (
     DeclarativeBase, Mapped, mapped_column, sessionmaker,
 )
 
-from app.config import DATABASE_URL
+from app.config import DATABASE_URL, PRICE_INPUT_PER_1M, PRICE_OUTPUT_PER_1M
+
+
+def cost_usd(prompt_tokens, completion_tokens) -> float:
+    """USD cost of one classification from its token usage (0 for cache hits / no tokens)."""
+    inp = (prompt_tokens or 0) / 1_000_000 * PRICE_INPUT_PER_1M
+    out = (completion_tokens or 0) / 1_000_000 * PRICE_OUTPUT_PER_1M
+    return inp + out
 
 
 class Base(DeclarativeBase):
@@ -61,6 +68,7 @@ class TicketLog(Base):
             "model": self.model,
             "prompt_tokens": self.prompt_tokens,
             "completion_tokens": self.completion_tokens,
+            "cost_usd": round(cost_usd(self.prompt_tokens, self.completion_tokens), 6),
             "latency_ms": self.latency_ms,
             "ok": self.ok,
             "error": self.error,
@@ -87,6 +95,16 @@ class ResolvedTicket(Base):
 
 engine = create_engine(DATABASE_URL, future=True, pool_pre_ping=True)
 SessionLocal = sessionmaker(bind=engine, expire_on_commit=False, future=True)
+
+
+def ping() -> bool:
+    """True if the database is reachable (for readiness checks)."""
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        return True
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def init_db() -> None:
@@ -146,17 +164,30 @@ def stats() -> dict:
         needs_review = session.scalar(
             select(func.count(TicketLog.id)).where(TicketLog.needs_review.is_(True))
         ) or 0
-        return {
-            "total": total,
-            "failures": failures,
-            "needs_review": needs_review,
-            "by_category": by_category,
-            "by_priority": by_priority,
-            "avg_latency_ms": round(float(avg_latency), 1) if avg_latency is not None else None,
-            "total_latency_ms": int(total_latency_ms),
-            "total_prompt_tokens": int(total_prompt_tokens),
-            "total_completion_tokens": int(total_completion_tokens),
-        }
+        cache_hits = session.scalar(
+            select(func.count(TicketLog.id)).where(TicketLog.reused_from_id.is_not(None))
+        ) or 0
+        llm_tickets = session.scalar(
+            select(func.count(TicketLog.id)).where(TicketLog.prompt_tokens.is_not(None))
+        ) or 0
+
+    total_cost = cost_usd(total_prompt_tokens, total_completion_tokens)
+    avg_llm_cost = total_cost / llm_tickets if llm_tickets else 0.0
+    return {
+        "total": total,
+        "failures": failures,
+        "needs_review": needs_review,
+        "by_category": by_category,
+        "by_priority": by_priority,
+        "avg_latency_ms": round(float(avg_latency), 1) if avg_latency is not None else None,
+        "total_latency_ms": int(total_latency_ms),
+        "total_prompt_tokens": int(total_prompt_tokens),
+        "total_completion_tokens": int(total_completion_tokens),
+        "total_cost_usd": round(total_cost, 4),
+        "avg_cost_per_ticket_usd": round(total_cost / total, 6) if total else 0.0,
+        "cache_hits": cache_hits,
+        "est_cost_saved_usd": round(cache_hits * avg_llm_cost, 4),
+    }
 
 
 def timing(manual_seconds_per_ticket: int) -> dict:
@@ -258,24 +289,11 @@ def search_similar_logs(query_embedding: List[float], k: int = 1) -> List[dict]:
     ]
 
 
-def incident_status(threshold: int, window_min: int) -> dict:
-    """Incident alarm: are the most recent tickets a consecutive same-category spike?
-
-    Looks at the trailing run of identical categories ending at the newest ticket; each
-    ticket in the run must be within `window_min` of the newest (0 = ignore timing).
-    Alarms when the run length reaches `threshold`.
-    """
-    with SessionLocal() as session:
-        rows = session.execute(
-            select(TicketLog.category, TicketLog.created_at)
-            .where(TicketLog.category.is_not(None))
-            .order_by(TicketLog.created_at.desc())
-            .limit(200)
-        ).all()
+def compute_incident(rows, threshold: int, window_min: int) -> dict:
+    """Pure trailing-run computation (testable). `rows` = [(category, created_at)] newest-first."""
     if not rows:
         return {"active": False, "count": 0, "threshold": threshold, "window_min": window_min}
-
-    newest_cat, newest_at = rows[0][0], rows[0][1]
+    newest_cat, newest_at = rows[0]
     cutoff = newest_at - timedelta(minutes=window_min) if window_min else None
     run = 0
     since = newest_at
@@ -294,6 +312,19 @@ def incident_status(threshold: int, window_min: int) -> dict:
         "window_min": window_min,
         "since": since.isoformat() if since else None,
     }
+
+
+def incident_status(threshold: int, window_min: int) -> dict:
+    """Incident alarm: are the most recent tickets a consecutive same-category spike?
+    Fetches recent rows, then delegates to compute_incident()."""
+    with SessionLocal() as session:
+        rows = session.execute(
+            select(TicketLog.category, TicketLog.created_at)
+            .where(TicketLog.category.is_not(None))
+            .order_by(TicketLog.created_at.desc())
+            .limit(200)
+        ).all()
+    return compute_incident([(r[0], r[1]) for r in rows], threshold, window_min)
 
 
 def logs_missing_embeddings() -> List[dict]:

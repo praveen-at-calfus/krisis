@@ -9,3 +9,7 @@ python-dotenv
 requests
 pydantic
 openai
+numpy
+pytest
+alembic
+httpx

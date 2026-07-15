@@ -7,11 +7,17 @@ from fastapi import FastAPI, HTTPException
 from app import classifier, config, db, embeddings, retrieval
 from app.schema import ClassifyRequest, RoutedTicket
 
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+)
 log = logging.getLogger("krisis.api")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Fail-fast visibility: surface config problems clearly at startup.
+    for problem in config.validate():
+        log.warning("CONFIG: %s", problem)
     # Best-effort: if Postgres isn't up yet, the API still serves /classify (logging is skipped).
     try:
         db.init_db()
@@ -54,7 +60,14 @@ def _log(ticket: str, routed: RoutedTicket, meta: dict, embedding=None) -> None:
 
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ok"}
+    """Readiness check: is a real key configured and the database reachable?"""
+    key_ok = config.openai_key_ok()
+    db_ok = db.ping()
+    return {
+        "status": "ok" if (key_ok and db_ok) else "degraded",
+        "openai_key": key_ok,
+        "db": db_ok,
+    }
 
 
 @app.post("/classify", response_model=RoutedTicket)

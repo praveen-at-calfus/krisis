@@ -26,7 +26,10 @@ class TicketDecision(BaseModel):
 
 class ClassifyRequest(BaseModel):
     """POST /classify request body."""
-    ticket: str = Field(..., description="Raw ticket message, exactly as an employee typed it")
+    ticket: str = Field(
+        ..., max_length=20000,
+        description="Raw ticket message, exactly as an employee typed it",
+    )
 
 
 class RoutedTicket(BaseModel):

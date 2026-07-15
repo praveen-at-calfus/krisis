@@ -186,6 +186,29 @@ cd ~/Projects/krisis/krisis/v1.2 && ../.venv/bin/streamlit run streamlit_app.py
 `run_demo.py` populates the DB so the dashboard's **Time saved** panel shows the before/after
 comparison (manual @ 5 min/ticket vs actual latency).
 
+## Cost tracking (v1.2)
+
+Each classification's token usage is priced (`PRICE_INPUT_PER_1M` / `PRICE_OUTPUT_PER_1M`,
+defaults for `gpt-4o-mini`) and shown **on the Dashboard only**: total cost, avg/ticket, and
+**est. cost saved by the cache** (cache hits skip the LLM → ~$0). Per-ticket cost is a column in
+the recent-tickets table. (Not shown on the employee Classify tab.)
+
+## Production notes (v1.2)
+
+- **Readiness:** `GET /health` returns `{status, openai_key, db}`; `status` is `degraded` if the
+  key is missing/placeholder or the DB is unreachable. Config problems are logged at startup
+  (`config.validate()`).
+- **Input guard:** `/classify` rejects tickets over 20,000 chars (422); normal long input is
+  truncated to `MAX_TICKET_CHARS`.
+- **Run in production:** drop `--reload` and add workers, e.g.
+  `../.venv/bin/uvicorn app.api:app --host 0.0.0.0 --port 8000 --workers 4`.
+- **Tests:** `../.venv/bin/pytest` (offline units + API; live LLM tests are `-m live`, deselected
+  by default).
+- **Migrations:** dev/tests auto-create the schema via `init_db()` (`create_all`). For production
+  use **Alembic**: `cd v1.2 && ../.venv/bin/alembic upgrade head` (initial revision creates
+  `ticket_log` + `resolved_ticket`). On an existing dev DB already created by `create_all`, run
+  `alembic stamp head` once to adopt Alembic without re-creating tables.
+
 ## Eval mapping (`eval.txt`)
 
 | Rubric line | Where it's covered |

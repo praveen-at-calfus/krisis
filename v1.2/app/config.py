@@ -46,3 +46,23 @@ CACHE_THRESHOLD = float(os.getenv("CACHE_THRESHOLD", "0.92"))
 # within this time window (a spike). Set INCIDENT_WINDOW_MIN=0 to ignore timing.
 INCIDENT_THRESHOLD = int(os.getenv("INCIDENT_THRESHOLD", "3"))
 INCIDENT_WINDOW_MIN = int(os.getenv("INCIDENT_WINDOW_MIN", "30"))
+
+# Cost tracking (v1.2): LLM price per 1M tokens (defaults for gpt-4o-mini), env-overridable.
+PRICE_INPUT_PER_1M = float(os.getenv("PRICE_INPUT_PER_1M", "0.15"))
+PRICE_OUTPUT_PER_1M = float(os.getenv("PRICE_OUTPUT_PER_1M", "0.60"))
+
+
+def openai_key_ok() -> bool:
+    """True if a real (non-placeholder) OpenAI key is configured."""
+    k = OPENAI_API_KEY or ""
+    return k.startswith("sk-") and not k.startswith("sk-your") and len(k) > 40
+
+
+def validate() -> list:
+    """Return a list of config problems (empty = OK). Used for fail-fast startup checks."""
+    problems = []
+    if not openai_key_ok():
+        problems.append("OPENAI_API_KEY is missing or a placeholder — set it in the root .env")
+    if not DATABASE_URL:
+        problems.append("DATABASE_URL is not set")
+    return problems
