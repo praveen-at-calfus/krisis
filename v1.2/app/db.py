@@ -43,6 +43,9 @@ class TicketLog(Base):
     embedding: Mapped[Optional[list]] = mapped_column(JSON)  # list[float]
     reused_from_id: Mapped[Optional[int]] = mapped_column(Integer)
     similarity: Mapped[Optional[float]] = mapped_column(Float)
+    # confidence-aware routing
+    confidence: Mapped[Optional[str]] = mapped_column(String(8))
+    needs_review: Mapped[Optional[bool]] = mapped_column(Boolean)
 
     def to_dict(self) -> dict:
         return {
@@ -63,6 +66,8 @@ class TicketLog(Base):
             "error": self.error,
             "reused_from_id": self.reused_from_id,
             "similarity": self.similarity,
+            "confidence": self.confidence,
+            "needs_review": self.needs_review,
         }
 
 
@@ -92,6 +97,8 @@ def init_db() -> None:
         conn.execute(text("ALTER TABLE ticket_log ADD COLUMN IF NOT EXISTS embedding JSONB"))
         conn.execute(text("ALTER TABLE ticket_log ADD COLUMN IF NOT EXISTS reused_from_id INTEGER"))
         conn.execute(text("ALTER TABLE ticket_log ADD COLUMN IF NOT EXISTS similarity DOUBLE PRECISION"))
+        conn.execute(text("ALTER TABLE ticket_log ADD COLUMN IF NOT EXISTS confidence VARCHAR(8)"))
+        conn.execute(text("ALTER TABLE ticket_log ADD COLUMN IF NOT EXISTS needs_review BOOLEAN"))
 
 
 def log_ticket(**fields) -> int:
@@ -136,9 +143,13 @@ def stats() -> dict:
         failures = session.scalar(
             select(func.count(TicketLog.id)).where(TicketLog.ok.is_(False))
         ) or 0
+        needs_review = session.scalar(
+            select(func.count(TicketLog.id)).where(TicketLog.needs_review.is_(True))
+        ) or 0
         return {
             "total": total,
             "failures": failures,
+            "needs_review": needs_review,
             "by_category": by_category,
             "by_priority": by_priority,
             "avg_latency_ms": round(float(avg_latency), 1) if avg_latency is not None else None,
@@ -240,8 +251,10 @@ def search_similar_logs(query_embedding: List[float], k: int = 1) -> List[dict]:
             "impact": rows[i].impact,
             "urgency": rows[i].urgency,
             "reasoning": rows[i].reasoning,
+            "confidence": rows[i].confidence or "high",
+            "needs_review": bool(rows[i].needs_review),
         }
-        for i in top
+    for i in top
     ]
 
 

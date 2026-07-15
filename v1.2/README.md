@@ -122,6 +122,15 @@ active — the Classify/employee tab is unaffected. Dismiss hides the current in
 different incident re-alarms. Tune via `INCIDENT_THRESHOLD` / `INCIDENT_WINDOW_MIN`
 (`INCIDENT_WINDOW_MIN=0` ignores timing).
 
+## Confidence-aware routing (v1.2)
+
+The LLM reports a categorical **confidence** (`high` / `medium` / `low`) with each classification.
+A ticket is flagged **`needs_review = true`** when confidence is `low` **or** the category is
+`unclassified` — the suggestion is kept (not hidden or rerouted), just marked for a human to
+confirm. Surfaced as `confidence` + `needs_review` in the `/classify` response, a warning on the
+Classify result, and a **"Needs review"** count + per-row flag on the Dashboard. (LLM
+self-reported confidence is indicative, not perfectly calibrated.)
+
 ---
 
 ## Prerequisites (one-time)

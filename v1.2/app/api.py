@@ -45,6 +45,8 @@ def _log(ticket: str, routed: RoutedTicket, meta: dict, embedding=None) -> None:
             embedding=embedding,
             reused_from_id=meta.get("source_ticket_id"),
             similarity=meta.get("similarity"),
+            confidence=routed.confidence,
+            needs_review=routed.needs_review,
         )
     except Exception as e:  # noqa: BLE001
         log.warning("failed to log ticket: %s", e)
@@ -84,6 +86,7 @@ def classify_endpoint(req: ClassifyRequest) -> RoutedTicket:
             category=m["category"], priority=m["priority"],
             assigned_team=m["assigned_team"], reasoning=m["reasoning"],
             impact=m["impact"], urgency=m["urgency"],
+            confidence=m.get("confidence", "high"), needs_review=m.get("needs_review", False),
             cached=True, source_ticket_id=m["id"], similarity=m["score"],
             similar_past=matches,
         )

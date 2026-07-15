@@ -10,6 +10,7 @@ Category = Literal[
 Priority = Literal["High", "Medium", "Low"]      # derived, not chosen by the LLM
 Impact = Literal["broad", "narrow"]
 Urgency = Literal["blocked", "workaround"]
+Confidence = Literal["high", "medium", "low"]    # the model's self-reported certainty
 
 
 class TicketDecision(BaseModel):
@@ -20,6 +21,7 @@ class TicketDecision(BaseModel):
     urgency: Urgency = Field(..., description="blocked = no usable workaround; workaround = work can continue")
     category: Category = Field(..., description="One of the fixed taxonomy categories")
     reasoning: str = Field(..., description="2-3 sentences explaining the key signal in the ticket, the impact + urgency judgement (and any tie-break), and the resulting category/routing")
+    confidence: Confidence = Field(..., description="How sure you are: high = clear; medium = some ambiguity; low = vague/ambiguous/insufficient detail")
 
 
 class ClassifyRequest(BaseModel):
@@ -36,6 +38,9 @@ class RoutedTicket(BaseModel):
     # surfaced for transparency (defensible priority); not part of the minimal contract
     impact: Impact
     urgency: Urgency
+    # confidence-aware routing: model's certainty + whether a human should review
+    confidence: Confidence = "high"
+    needs_review: bool = False
     # cache provenance (set when the answer was reused from a near-duplicate past ticket)
     cached: bool = False
     source_ticket_id: Optional[int] = None

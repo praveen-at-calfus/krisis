@@ -41,6 +41,11 @@ def derive_priority(d: TicketDecision) -> str:
     return PRIORITY_MATRIX[(d.impact, d.urgency)]
 
 
+def needs_review(d: TicketDecision) -> bool:
+    """Flag for human review when the model is unsure or couldn't classify."""
+    return d.confidence == "low" or d.category == "unclassified"
+
+
 def _fallback() -> RoutedTicket:
     """Layer 3: a valid, safe response when the LLM path fails after all retries."""
     return RoutedTicket(
@@ -50,6 +55,8 @@ def _fallback() -> RoutedTicket:
         reasoning="Automatic fallback after repeated classification failures - flagged for manual review.",
         impact="narrow",
         urgency="workaround",
+        confidence="low",
+        needs_review=True,
     )
 
 
@@ -85,6 +92,8 @@ def classify(ticket: str) -> Tuple[RoutedTicket, dict]:
                 reasoning=decision.reasoning,
                 impact=decision.impact,
                 urgency=decision.urgency,
+                confidence=decision.confidence,
+                needs_review=needs_review(decision),
             )
             return routed, {
                 "model": MODEL,

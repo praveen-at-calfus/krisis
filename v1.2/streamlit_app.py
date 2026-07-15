@@ -87,7 +87,15 @@ with tab_classify:
                     c2.metric("Priority", PRIORITY_COLOR.get(d["priority"], d["priority"]))
                     c3.metric("Assigned team", d["assigned_team"])
                     st.markdown(f"**Reasoning:** {d['reasoning']}")
-                    st.caption(f"Assessment — impact: `{d['impact']}` · urgency: `{d['urgency']}`")
+                    st.caption(
+                        f"Assessment — impact: `{d['impact']}` · urgency: `{d['urgency']}` "
+                        f"· confidence: `{d.get('confidence', 'high')}`"
+                    )
+                    if d.get("needs_review"):
+                        st.warning(
+                            "⚠️ Low-confidence classification — **flagged for human review**. "
+                            "The suggestion above should be confirmed by an agent."
+                        )
 
                     # Panel 1: similar past SUBMITTED tickets (from ticket_log)
                     st.divider()
@@ -138,10 +146,11 @@ with tab_dashboard:
         # Incident alarm — managing team only (Dashboard), dismissible
         render_incident_banner(incident)
 
-        m1, m2, m3 = st.columns(3)
+        m1, m2, m3, m4 = st.columns(4)
         m1.metric("Total tickets", stats.get("total", 0))
-        m2.metric("Failures", stats.get("failures", 0))
-        m3.metric("Avg latency (ms)", stats.get("avg_latency_ms") or "—")
+        m2.metric("Needs review", stats.get("needs_review", 0))
+        m3.metric("Failures", stats.get("failures", 0))
+        m4.metric("Avg latency (ms)", stats.get("avg_latency_ms") or "—")
 
         # Before/after: manual triage vs KRISIS
         st.subheader("⏱️ Time saved vs manual triage")
@@ -171,6 +180,8 @@ with tab_dashboard:
                         "category": r["category"],
                         "priority": r["priority"],
                         "team": r["assigned_team"],
+                        "conf": r.get("confidence"),
+                        "review": "⚠️" if r.get("needs_review") else "",
                         "ok": r["ok"],
                     }
                     for r in recent
