@@ -40,3 +40,5 @@ class RoutedTicket(BaseModel):
     cached: bool = False
     source_ticket_id: Optional[int] = None
     similarity: Optional[float] = None
+    # similar past SUBMITTED tickets (from ticket_log), for the reference panel
+    similar_past: list = Field(default_factory=list)

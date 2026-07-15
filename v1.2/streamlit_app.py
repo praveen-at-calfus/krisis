@@ -57,13 +57,28 @@ with tab_classify:
                     st.markdown(f"**Reasoning:** {d['reasoning']}")
                     st.caption(f"Assessment — impact: `{d['impact']}` · urgency: `{d['urgency']}`")
 
-                    # Reference panel: similar past resolved tickets (does not affect routing)
+                    # Panel 1: similar past SUBMITTED tickets (from ticket_log)
+                    st.divider()
+                    st.subheader("🗂️ Similar past tickets you've submitted")
+                    past = [p for p in d.get("similar_past", []) if p["score"] >= 0.5]
+                    if past:
+                        for p in past:
+                            reused = d.get("cached") and p["id"] == d.get("source_ticket_id")
+                            tag = "  ← answer reused from this" if reused else ""
+                            with st.expander(
+                                f"{p['score']:.2f} · #{p['id']} · {p['category']}/{p['priority']}"
+                                f" — {p['ticket_text'][:60]}{tag}"
+                            ):
+                                st.markdown(f"**Reasoning:** {p['reasoning']}")
+                    else:
+                        st.caption("No similar past submitted tickets found.")
+
+                    # Panel 2: how similar issues were RESOLVED (curated corpus)
                     try:
                         similar = api_get("/similar", ticket=ticket).get("similar", [])
                     except requests.RequestException:
                         similar = []
-                    st.divider()
-                    st.subheader("🔎 Similar past tickets")
+                    st.subheader("🔎 How similar issues were resolved")
                     if similar:
                         for s in similar:
                             with st.expander(
@@ -71,7 +86,7 @@ with tab_classify:
                             ):
                                 st.markdown(f"**Resolution:** {s['resolution']}")
                     else:
-                        st.caption("No similar past tickets yet — run `scripts/seed_resolved.py` to seed the corpus.")
+                        st.caption("No resolved tickets yet — run `scripts/seed_resolved.py` to seed the corpus.")
                 else:
                     detail = resp.json().get("detail", resp.text)
                     st.error(f"API returned {resp.status_code}: {detail}")

@@ -68,28 +68,33 @@ def classify_endpoint(req: ClassifyRequest) -> RoutedTicket:
     except Exception as e:  # noqa: BLE001 — embedding is best-effort; fall through to LLM
         log.warning("embedding failed (no cache this request): %s", e)
 
-    # Semantic cache: if a near-duplicate was already classified, reuse it and skip the LLM.
-    if config.CACHE_ENABLED and embedding is not None:
+    # Similar PAST SUBMITTED tickets (computed before the current one is logged, so no
+    # self-match). Top match drives the cache; the full list is shown in the UI panel.
+    matches = []
+    if embedding is not None:
         try:
-            matches = db.search_similar_logs(embedding, k=1)
+            matches = db.search_similar_logs(embedding, k=config.SIMILAR_K)
         except Exception as e:  # noqa: BLE001
-            matches = []
-            log.warning("cache lookup failed: %s", e)
-        if matches and matches[0]["score"] >= config.CACHE_THRESHOLD:
-            m = matches[0]
-            routed = RoutedTicket(
-                category=m["category"], priority=m["priority"],
-                assigned_team=m["assigned_team"], reasoning=m["reasoning"],
-                impact=m["impact"], urgency=m["urgency"],
-                cached=True, source_ticket_id=m["id"], similarity=m["score"],
-            )
-            _log(ticket, routed,
-                 {"ok": True, "source_ticket_id": m["id"], "similarity": m["score"]},
-                 embedding)
-            return routed
+            log.warning("similar-log lookup failed: %s", e)
+
+    # Semantic cache: if the closest past ticket is similar enough, reuse it and skip the LLM.
+    if config.CACHE_ENABLED and matches and matches[0]["score"] >= config.CACHE_THRESHOLD:
+        m = matches[0]
+        routed = RoutedTicket(
+            category=m["category"], priority=m["priority"],
+            assigned_team=m["assigned_team"], reasoning=m["reasoning"],
+            impact=m["impact"], urgency=m["urgency"],
+            cached=True, source_ticket_id=m["id"], similarity=m["score"],
+            similar_past=matches,
+        )
+        _log(ticket, routed,
+             {"ok": True, "source_ticket_id": m["id"], "similarity": m["score"]},
+             embedding)
+        return routed
 
     # Cache miss -> classify with the LLM (classify() never raises; it falls back safely).
     routed, meta = classifier.classify(ticket)
+    routed.similar_past = matches
     _log(ticket, routed, meta, embedding)
     return routed
 

@@ -107,6 +107,9 @@ tickets. The reused answer carries `cached: true`, `source_ticket_id`, and `simi
   cd ~/Projects/krisis/krisis/v1.2 && ../.venv/bin/python scripts/backfill_embeddings.py
   ```
 - Tune with env vars: `CACHE_THRESHOLD=0.95` (stricter) or `CACHE_ENABLED=0` (off).
+- The `/classify` response also returns `similar_past` — the most similar past **submitted**
+  tickets (from `ticket_log`), which the Classify tab lists in a panel **even below the reuse
+  threshold**, so you can see prior related tickets (the reused one is marked).
 
 ---
 
