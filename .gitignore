@@ -7,6 +7,7 @@ eval.txt
 # Local-only notes (keep out of the repo)
 PITCH.md
 EVAL_MAP.md
+CODE_REVIEW_PREP.md
 
 # Python virtual environments
 .venv/
