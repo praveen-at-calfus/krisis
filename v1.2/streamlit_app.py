@@ -1,7 +1,8 @@
 """KRISIS Streamlit UI — a thin CLIENT of the FastAPI backend.
 
-Lightweight RBAC (no auth): a landing choice routes to two role-scoped views —
-'Register a ticket' (employees) and 'Manage tickets' (managing team).
+Lightweight RBAC (no auth): a landing page ('Use krisis') opens a modal role
+picker routing to two role-scoped views — 'Register a ticket' (employees) and
+'Manage tickets' (managing team). A top-right 'Swap role' toggles between them.
 """
 import os
 
@@ -10,7 +11,7 @@ import streamlit as st
 
 API_BASE = os.getenv("API_BASE", "http://localhost:8000")
 
-st.set_page_config(page_title="KRISIS — Smart Triage", page_icon="🛎️", layout="wide")
+st.set_page_config(page_title="krisis. for your crisis.", page_icon="♾️", layout="wide")
 
 PRIORITY_COLOR = {"High": "🔴 High", "Medium": "🟠 Medium", "Low": "🟢 Low"}
 
@@ -25,10 +26,41 @@ def api_post(path: str, payload: dict):
     return requests.post(f"{API_BASE}{path}", json=payload, timeout=60)
 
 
-def switch_role():
-    if st.button("← Switch role"):
-        st.session_state.pop("role", None)
+@st.dialog("How would you like to use krisis?")
+def role_dialog():
+    """Semi-transparent modal role picker: a green box and a blue box."""
+    st.markdown(
+        """
+        <style>
+        .st-key-pick_employee button {
+            background:#16a34a; color:#fff; border:none; font-weight:700; padding:14px 0;
+        }
+        .st-key-pick_employee button:hover { background:#15803d; color:#fff; }
+        .st-key-pick_manager button {
+            background:#2563eb; color:#fff; border:none; font-weight:700; padding:14px 0;
+        }
+        .st-key-pick_manager button:hover { background:#1d4ed8; color:#fff; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    if st.button("Register a ticket", key="pick_employee", use_container_width=True):
+        st.session_state["role"] = "employee"
         st.rerun()
+    if st.button("Manage tickets", key="pick_manager", use_container_width=True):
+        st.session_state["role"] = "manager"
+        st.rerun()
+
+
+def page_header(title: str, current_role: str):
+    """Page title with a top-right 'Swap role' button that toggles directly (no consent)."""
+    left, right = st.columns([5, 1], vertical_alignment="center")
+    with left:
+        st.title(title)
+    with right:
+        if st.button("⇄ Swap role", key="swap_role", use_container_width=True):
+            st.session_state["role"] = "manager" if current_role == "employee" else "employee"
+            st.rerun()
 
 
 def render_incident_banner(inc: dict):
@@ -63,27 +95,25 @@ def render_incident_banner(inc: dict):
 
 # ---------------------------------------------------------------- Landing
 def landing():
-    st.title("🛎️ KRISIS — Your Smart Triage System")
-    st.caption("How would you like to use KRISIS?")
-    c1, c2 = st.columns(2)
-    with c1:
-        st.subheader("🎫 Register a ticket")
-        st.write("Submit an IT or engineering issue and get an instant status update.")
-        if st.button("Register a ticket", type="primary", use_container_width=True):
-            st.session_state["role"] = "employee"
-            st.rerun()
+    st.markdown(
+        """
+        <div style="text-align:center; margin:14vh 0 2rem 0;">
+            <h1 style="font-size:3.4rem; font-weight:800; margin:0; letter-spacing:-1px;">
+                ♾️ krisis. <span style="opacity:.6;">for your crisis.</span>
+            </h1>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    c1, c2, c3 = st.columns([2, 1, 2])
     with c2:
-        st.subheader("📊 Manage tickets")
-        st.write("Operations dashboard: volumes, cost, incident alarms, and the review queue.")
-        if st.button("Manage tickets", use_container_width=True):
-            st.session_state["role"] = "manager"
-            st.rerun()
+        if st.button("Use krisis", type="primary", use_container_width=True, key="use_krisis"):
+            role_dialog()
 
 
 # ---------------------------------------------------------------- Employee
 def employee_page():
-    switch_role()
-    st.title("🎫 Register a ticket")
+    page_header("🎫 Register a ticket", "employee")
     ticket = st.text_area(
         "Describe your issue",
         height=140,
@@ -128,8 +158,7 @@ def employee_page():
 
 # ---------------------------------------------------------------- Manager
 def manager_page():
-    switch_role()
-    st.title("📊 Manage tickets")
+    page_header("📊 Manage tickets", "manager")
     if st.button("Refresh"):
         st.rerun()
     try:
