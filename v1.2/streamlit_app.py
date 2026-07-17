@@ -1,4 +1,8 @@
-"""KRISIS Streamlit UI — a thin CLIENT of the FastAPI backend (never talks to LLM/DB directly)."""
+"""KRISIS Streamlit UI — a thin CLIENT of the FastAPI backend.
+
+Lightweight RBAC (no auth): a landing choice routes to two role-scoped views —
+'Register a ticket' (employees) and 'Manage tickets' (managing team).
+"""
 import os
 
 import requests
@@ -18,17 +22,17 @@ def api_get(path: str, **params):
 
 
 def api_post(path: str, payload: dict):
-    r = requests.post(f"{API_BASE}{path}", json=payload, timeout=60)
-    return r
+    return requests.post(f"{API_BASE}{path}", json=payload, timeout=60)
 
 
-st.title("🛎️ KRISIS — Your Smart Triage System")
-st.caption(f"Client of the FastAPI backend at `{API_BASE}`")
+def switch_role():
+    if st.button("← Switch role"):
+        st.session_state.pop("role", None)
+        st.rerun()
 
 
 def render_incident_banner(inc: dict):
-    """Pulsing red alarm for the managing team (Dashboard only), with a dismiss control.
-    Dismissal is per-incident: a new/different incident re-alarms."""
+    """Pulsing red alarm for the managing team, with a dismiss control (per-incident)."""
     if not inc.get("active"):
         return
     key = f"{inc.get('category')}::{inc.get('since')}"
@@ -57,145 +61,136 @@ def render_incident_banner(inc: dict):
         st.rerun()
 
 
-tab_classify, tab_dashboard = st.tabs(["Classify a ticket", "Dashboard"])
+# ---------------------------------------------------------------- Landing
+def landing():
+    st.title("🛎️ KRISIS — Your Smart Triage System")
+    st.caption("How would you like to use KRISIS?")
+    c1, c2 = st.columns(2)
+    with c1:
+        st.subheader("🎫 Register a ticket")
+        st.write("Submit an IT or engineering issue and get an instant status update.")
+        if st.button("Register a ticket", type="primary", use_container_width=True):
+            st.session_state["role"] = "employee"
+            st.rerun()
+    with c2:
+        st.subheader("📊 Manage tickets")
+        st.write("Operations dashboard: volumes, cost, incident alarms, and the review queue.")
+        if st.button("Manage tickets", use_container_width=True):
+            st.session_state["role"] = "manager"
+            st.rerun()
 
-# ---------------------------------------------------------------- Classify
-with tab_classify:
+
+# ---------------------------------------------------------------- Employee
+def employee_page():
+    switch_role()
+    st.title("🎫 Register a ticket")
     ticket = st.text_area(
-        "Paste a raw ticket message",
+        "Describe your issue",
         height=140,
-        placeholder="e.g. The CI pipeline rejects my SSH key as unauthorized and I can't push.",
+        placeholder="e.g. I can't connect to the VPN — it keeps rejecting my credentials.",
     )
-    if st.button("Route ticket", type="primary"):
+    if st.button("Submit ticket", type="primary"):
         if not ticket.strip():
-            st.warning("Please enter a ticket message.")
-        else:
+            st.warning("Please describe your issue before submitting.")
+            return
+        try:
+            resp = api_post("/classify", {"ticket": ticket})
+        except requests.RequestException as e:
+            st.error(f"Couldn't reach the support service right now: {e}")
+            return
+        if resp.status_code == 200:
+            d = resp.json()
+            st.success(
+                f"✅ **Ticket submitted successfully.** It's been logged as a "
+                f"**{d['priority']}**-priority **{d['category']}** ticket, and the "
+                f"**{d['assigned_team']}** team will get back to you."
+            )
+            st.markdown(f"**Why it was routed this way:** {d['reasoning']}")
+            st.caption(f"Assessment — impact: `{d['impact']}` · urgency: `{d['urgency']}`")
+
+            # How similar issues have been resolved (solutions, no scores)
             try:
-                resp = api_post("/classify", {"ticket": ticket})
-            except requests.RequestException as e:
-                st.error(f"Could not reach the API at {API_BASE}: {e}")
-            else:
-                if resp.status_code == 200:
-                    d = resp.json()
-                    if d.get("cached"):
-                        st.success(
-                            f"♻️ Answer reused from ticket #{d['source_ticket_id']} "
-                            f"(similarity {d['similarity']:.2f}) — no LLM call, time & tokens saved."
-                        )
-                    c1, c2, c3 = st.columns(3)
-                    c1.metric("Category", d["category"])
-                    c2.metric("Priority", PRIORITY_COLOR.get(d["priority"], d["priority"]))
-                    c3.metric("Assigned team", d["assigned_team"])
-                    st.markdown(f"**Reasoning:** {d['reasoning']}")
-                    st.caption(
-                        f"Assessment — impact: `{d['impact']}` · urgency: `{d['urgency']}` "
-                        f"· confidence: `{d.get('confidence', 'high')}`"
-                    )
-                    if d.get("needs_review"):
-                        st.warning(
-                            "⚠️ Low-confidence classification — **flagged for human review**. "
-                            "The suggestion above should be confirmed by an agent."
-                        )
+                similar = api_get("/similar", ticket=ticket).get("similar", [])
+            except requests.RequestException:
+                similar = []
+            if similar:
+                st.divider()
+                st.subheader("💡 How similar issues have been resolved")
+                st.caption("These may help you resolve it yourself while you wait.")
+                for s in similar:
+                    with st.expander(f"{s['category']} — {s['ticket_text'][:80]}"):
+                        st.markdown(f"**Resolution:** {s['resolution']}")
+        elif resp.status_code == 422:
+            st.warning("That message looks empty or too long — please shorten it and try again.")
+        else:
+            st.error("Something went wrong submitting your ticket. Please try again shortly.")
 
-                    # Panel 1: similar past SUBMITTED tickets (from ticket_log)
-                    st.divider()
-                    st.subheader("🗂️ Similar past tickets you've submitted")
-                    past = [p for p in d.get("similar_past", []) if p["score"] >= 0.5]
-                    if past:
-                        for p in past:
-                            reused = d.get("cached") and p["id"] == d.get("source_ticket_id")
-                            tag = "  ← answer reused from this" if reused else ""
-                            with st.expander(
-                                f"{p['score']:.2f} · #{p['id']} · {p['category']}/{p['priority']}"
-                                f" — {p['ticket_text'][:60]}{tag}"
-                            ):
-                                st.markdown(f"**Reasoning:** {p['reasoning']}")
-                    else:
-                        st.caption("No similar past submitted tickets found.")
 
-                    # Panel 2: how similar issues were RESOLVED (curated corpus)
-                    try:
-                        similar = api_get("/similar", ticket=ticket).get("similar", [])
-                    except requests.RequestException:
-                        similar = []
-                    st.subheader("🔎 How similar issues were resolved")
-                    if similar:
-                        for s in similar:
-                            with st.expander(
-                                f"{s['score']:.2f} · {s['category']} — {s['ticket_text'][:70]}"
-                            ):
-                                st.markdown(f"**Resolution:** {s['resolution']}")
-                    else:
-                        st.caption("No resolved tickets yet — run `scripts/seed_resolved.py` to seed the corpus.")
-                else:
-                    detail = resp.json().get("detail", resp.text)
-                    st.error(f"API returned {resp.status_code}: {detail}")
-
-# ---------------------------------------------------------------- Dashboard
-with tab_dashboard:
+# ---------------------------------------------------------------- Manager
+def manager_page():
+    switch_role()
+    st.title("📊 Manage tickets")
     if st.button("Refresh"):
         st.rerun()
     try:
         stats = api_get("/stats")
-        timing = api_get("/timing")
         incident = api_get("/incidents")
         recent = api_get("/tickets", limit=50).get("tickets", [])
     except requests.RequestException as e:
-        st.error(f"Could not load dashboard from {API_BASE}: {e}")
+        st.error(f"Could not load the dashboard from {API_BASE}: {e}")
+        return
+
+    render_incident_banner(incident)
+
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Total tickets", stats.get("total", 0))
+    m2.metric("Needs review", stats.get("needs_review", 0))
+    m3.metric("Failures", stats.get("failures", 0))
+    m4.metric("Avg latency (ms)", stats.get("avg_latency_ms") or "—")
+
+    st.subheader("💰 LLM cost")
+    k1, k2, k3 = st.columns(3)
+    k1.metric("Total cost", f"${stats.get('total_cost_usd', 0):.4f}")
+    k2.metric("Avg / ticket", f"${stats.get('avg_cost_per_ticket_usd', 0):.5f}")
+    k3.metric("Saved by cache (est.)", f"${stats.get('est_cost_saved_usd', 0):.4f}",
+              help=f"{stats.get('cache_hits', 0)} cache hits skipped the LLM")
+
+    col_a, col_b = st.columns(2)
+    with col_a:
+        st.subheader("By priority")
+        st.bar_chart(stats.get("by_priority", {}))
+    with col_b:
+        st.subheader("By category")
+        st.bar_chart(stats.get("by_category", {}))
+
+    st.subheader("Recent tickets")
+    if recent:
+        st.dataframe(
+            [
+                {
+                    "when": r["created_at"],
+                    "ticket": (r["ticket_text"] or "")[:60],
+                    "category": r["category"],
+                    "priority": r["priority"],
+                    "team": r["assigned_team"],
+                    "conf": r.get("confidence"),
+                    "review": "⚠️" if r.get("needs_review") else "",
+                    "cost $": f"{r.get('cost_usd', 0):.5f}",
+                    "status": "✓" if r["ok"] else "⚠ fallback",
+                }
+                for r in recent
+            ],
+            use_container_width=True,
+        )
     else:
-        # Incident alarm — managing team only (Dashboard), dismissible
-        render_incident_banner(incident)
+        st.info("No tickets logged yet. Register one, then refresh.")
 
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Total tickets", stats.get("total", 0))
-        m2.metric("Needs review", stats.get("needs_review", 0))
-        m3.metric("Failures", stats.get("failures", 0))
-        m4.metric("Avg latency (ms)", stats.get("avg_latency_ms") or "—")
 
-        # Before/after: manual triage vs KRISIS
-        st.subheader("⏱️ Time saved vs manual triage")
-        def _mins(sec):
-            return f"{sec/60:.1f} min" if sec else "—"
-        t1, t2, t3 = st.columns(3)
-        t1.metric("Manual (est.)", _mins(timing.get("manual_total_seconds", 0)),
-                  help=f"{timing.get('manual_baseline_seconds_per_ticket', 300)}s/ticket assumed")
-        t2.metric("KRISIS (actual)", f"{timing.get('automated_total_seconds', 0):.1f} s")
-        t3.metric("Time saved", _mins(timing.get("time_saved_seconds", 0)))
-
-        # Cost tracking
-        st.subheader("💰 LLM cost")
-        k1, k2, k3 = st.columns(3)
-        k1.metric("Total cost", f"${stats.get('total_cost_usd', 0):.4f}")
-        k2.metric("Avg / ticket", f"${stats.get('avg_cost_per_ticket_usd', 0):.5f}")
-        k3.metric("Saved by cache (est.)", f"${stats.get('est_cost_saved_usd', 0):.4f}",
-                  help=f"{stats.get('cache_hits', 0)} cache hits skipped the LLM")
-
-        col_a, col_b = st.columns(2)
-        with col_a:
-            st.subheader("By priority")
-            st.bar_chart(stats.get("by_priority", {}))
-        with col_b:
-            st.subheader("By category")
-            st.bar_chart(stats.get("by_category", {}))
-
-        st.subheader("Recent tickets")
-        if recent:
-            st.dataframe(
-                [
-                    {
-                        "when": r["created_at"],
-                        "ticket": (r["ticket_text"] or "")[:60],
-                        "category": r["category"],
-                        "priority": r["priority"],
-                        "team": r["assigned_team"],
-                        "conf": r.get("confidence"),
-                        "review": "⚠️" if r.get("needs_review") else "",
-                        "cost $": f"{r.get('cost_usd', 0):.5f}",
-                        "status": "✓" if r["ok"] else "⚠ fallback",
-                    }
-                    for r in recent
-                ],
-                use_container_width=True,
-            )
-        else:
-            st.info("No tickets logged yet. Classify one, then refresh.")
+# ---------------------------------------------------------------- Route by role
+_role = st.session_state.get("role")
+if _role == "employee":
+    employee_page()
+elif _role == "manager":
+    manager_page()
+else:
+    landing()

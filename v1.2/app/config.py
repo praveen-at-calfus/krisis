@@ -30,12 +30,18 @@ DATABASE_URL = os.getenv(
 
 # Cap runaway-length tickets before sending to the LLM (edge-case guard).
 MAX_TICKET_CHARS = int(os.getenv("MAX_TICKET_CHARS", "8000"))
-# Assumed human triage time per ticket, for the before/after dashboard comparison.
-MANUAL_TRIAGE_SECONDS = int(os.getenv("MANUAL_TRIAGE_SECONDS", "300"))
 
 # Retrieval layer (v1.2): embeddings model + how many similar tickets to return.
 EMBED_MODEL = os.getenv("EMBED_MODEL", "text-embedding-3-small")
 SIMILAR_K = int(os.getenv("SIMILAR_K", "3"))
+
+# Deterministic confidence (embedding-prototype margin, see app/confidence.py).
+# Levels come from agreement with the LLM's category + cosine similarity to the
+# category centroid + margin over the runner-up. Heuristic defaults; env-tunable.
+CONF_TEMP = float(os.getenv("CONF_TEMP", "0.1"))        # softmax temperature for display score
+CONF_HIGH_SIM = float(os.getenv("CONF_HIGH_SIM", "0.45"))
+CONF_LOW_SIM = float(os.getenv("CONF_LOW_SIM", "0.30"))
+CONF_MARGIN = float(os.getenv("CONF_MARGIN", "0.05"))
 
 # Semantic classification cache (v1.2): if a past ticket_log entry is at least this
 # cosine-similar, reuse its classification instead of calling the LLM again.

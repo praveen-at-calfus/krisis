@@ -190,27 +190,20 @@ def stats() -> dict:
     }
 
 
-def timing(manual_seconds_per_ticket: int) -> dict:
-    """Before/after comparison: assumed manual triage time vs actual automated latency."""
-    s = stats()
-    n = s["total"]
-    automated_s = s["total_latency_ms"] / 1000.0
-    manual_s = n * manual_seconds_per_ticket
-    return {
-        "tickets": n,
-        "manual_baseline_seconds_per_ticket": manual_seconds_per_ticket,
-        "manual_total_seconds": manual_s,
-        "automated_total_seconds": round(automated_s, 1),
-        "time_saved_seconds": round(manual_s - automated_s, 1),
-        "avg_latency_ms": s["avg_latency_ms"],
-    }
-
-
 # --- Retrieval layer (v1.2) -------------------------------------------------
 
 def resolved_count() -> int:
     with SessionLocal() as session:
         return session.scalar(select(func.count(ResolvedTicket.id))) or 0
+
+
+def resolved_label_embeddings() -> List[tuple]:
+    """[(category, embedding)] from the resolved corpus, for building category centroids."""
+    with SessionLocal() as session:
+        rows = session.execute(
+            select(ResolvedTicket.category, ResolvedTicket.embedding)
+        ).all()
+    return [(r[0], r[1]) for r in rows if r[0] and r[1]]
 
 
 def seed_resolved_tickets(items: List[dict]) -> int:

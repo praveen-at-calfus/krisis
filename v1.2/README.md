@@ -1,15 +1,15 @@
-# KRISIS v1.2 — + Retrieval layer
+# KRISIS v1.2 — Smart Triage System
 
 Smart ticket triage: a raw ticket message in → a structured routing decision out
 (`category`, `priority`, `assigned_team`, `reasoning`).
 
-Carries over everything from v1.1 (3-layer reliability, edge-case handling, consistency
-check, 21 demo tickets, before/after timing) and adds **Stage 1 of v1.2: a retrieval
-layer** — new tickets are matched (by embedding similarity) against a corpus of past
-**resolved** tickets, shown as a reference panel alongside the classification. The
-classification core is unchanged. (Remaining v1.2 stages — confidence-aware routing,
-cost/usage tracking, incident clustering, reply suggestions, feedback loop,
-production-ready — are not built yet.)
+Built on the v1.1 core (3-layer reliability, edge-case handling, consistency) and adds:
+**retrieval** (similar resolved tickets), a **semantic classification cache**,
+**deterministic confidence** (embedding-prototype margin), **incident clustering**,
+**per-ticket cost tracking**, and a lightweight **role split** — a landing choice between
+**Register a ticket** (employees) and **Manage tickets** (managing team), no auth.
+The classification core (LLM decides category/impact/urgency; code derives priority + team)
+is unchanged.
 
 ## Architecture (API-first)
 
@@ -27,20 +27,21 @@ not chosen by the model.
 ```
 v1.2/
 ├── app/
-│   ├── config.py      # loads .env (walks up); MAX_TICKET_CHARS, MANUAL_TRIAGE_SECONDS, EMBED_MODEL, SIMILAR_K
+│   ├── config.py      # loads .env (walks up); MAX_TICKET_CHARS, EMBED_MODEL, SIMILAR_K, CONF_*
 │   ├── taxonomy.py    # categories→teams, Impact×Urgency matrix, overrides
 │   ├── schema.py      # Pydantic: TicketDecision (LLM), ClassifyRequest, RoutedTicket
 │   ├── prompt.py      # few-shot prompt (6 examples) + LangChain messages
 │   ├── classifier.py  # LLM call + 3-layer retry/fallback; derive_priority()
 │   ├── embeddings.py  # OpenAI text-embedding-3-small (LangChain), lazy
-│   ├── retrieval.py   # similar_tickets(): embed query -> cosine search
-│   ├── db.py          # SQLAlchemy: TicketLog + ResolvedTicket; stats, timing, search_similar
-│   └── api.py         # FastAPI: POST /classify, GET /tickets, /stats, /timing, /similar, /health
+│   ├── retrieval.py   # similar_tickets(): embed query -> cosine search (resolved corpus)
+│   ├── confidence.py  # deterministic confidence: embedding-prototype (centroid) margin
+│   ├── db.py          # SQLAlchemy: TicketLog + ResolvedTicket; stats, search_similar(_logs)
+│   └── api.py         # FastAPI: POST /classify, GET /tickets, /stats, /similar, /incidents, /health
 ├── run.py             # single-command launcher (API + UI together)
-├── streamlit_app.py   # UI client + dashboard + "Similar past tickets" panel
+├── streamlit_app.py   # role-gated UI: Register a ticket (employee) / Manage tickets (dashboard)
 ├── demo_tickets.py    # 21 labeled demo tickets
 ├── resolved_tickets.py # 18 past RESOLVED tickets (retrieval corpus)
-├── scripts/           # run_demo, consistency_check, edge_cases, interactive, seed_resolved
+├── scripts/           # run_demo, consistency_check, edge_cases, interactive, seed_resolved, backfill_embeddings
 ├── .env.example       # template for the shared root .env
 └── requirements.txt
 ```
@@ -71,17 +72,33 @@ Every request is logged either way (`ok=True/False`, `attempts`, `error`, tokens
 |---|---|---|
 | POST | `/classify` | Route a raw ticket → `{category, priority, assigned_team, reasoning, impact, urgency}` |
 | GET | `/tickets?limit=N` | Recent logged tickets from Postgres |
-| GET | `/stats` | Totals, category/priority breakdowns, avg latency, token totals, failures |
-| GET | `/timing` | Before/after: assumed manual triage time vs actual automated latency |
+| GET | `/stats` | Totals, category/priority breakdowns, avg latency, token totals + cost, failures |
 | GET | `/similar?ticket=...&k=3` | Retrieval: most similar past resolved tickets (reference only; `[]` if corpus unseeded) |
 | GET | `/incidents` | Incident alarm: consecutive same-category spike state |
 | GET | `/health` | Liveness check |
 
+## Roles — lightweight RBAC, no auth (v1.2)
+
+The Streamlit app opens on a **landing choice** (no login, no passwords) that gates two
+role-scoped views via `st.session_state["role"]`:
+
+- **🎫 Register a ticket** (`role="employee"`) — a text area → `POST /classify`, then a
+  reassuring confirmation: *"Ticket submitted successfully. Logged as a {priority}-priority
+  {category} ticket — the {assigned_team} team will get back to you,"* the routing reasoning,
+  and the "How similar issues have been resolved" section. Internal signals (confidence,
+  needs-review, cache/similarity, raw scores, the similar-*submitted* panel) are **hidden**.
+- **📊 Manage tickets** (`role="manager"`) — the operations dashboard: total / needs-review /
+  failures / latency, the LLM-cost block, priority & category charts, the incident alarm
+  banner, and the recent-tickets table (with confidence / needs-review / cost / status).
+
+A **"← Switch role"** control on each page clears the role and returns to the landing.
+This is a UI-level separation of concerns only — not a security boundary.
+
 ## Retrieval layer (v1.2 Stage 1)
 
 New tickets are matched against a corpus of past **resolved** tickets (`resolved_tickets.py`)
-by embedding similarity, and shown as a **reference panel** in the Classify tab — it never
-changes the routing decision.
+by embedding similarity. On the employee page they surface as **"How similar issues have been
+resolved"** (issue + solution, no scores); it never changes the routing decision.
 
 - **Embeddings:** OpenAI `text-embedding-3-small` (`app/embeddings.py`).
 - **Store & search:** vectors are stored in Postgres (`resolved_ticket` table) and ranked by
@@ -122,14 +139,30 @@ active — the Classify/employee tab is unaffected. Dismiss hides the current in
 different incident re-alarms. Tune via `INCIDENT_THRESHOLD` / `INCIDENT_WINDOW_MIN`
 (`INCIDENT_WINDOW_MIN=0` ignores timing).
 
-## Confidence-aware routing (v1.2)
+## Deterministic confidence (v1.2)
 
-The LLM reports a categorical **confidence** (`high` / `medium` / `low`) with each classification.
-A ticket is flagged **`needs_review = true`** when confidence is `low` **or** the category is
+Confidence is **computed, not self-reported**. The LLM no longer rates its own certainty
+(which is poorly calibrated); instead `app/confidence.py` runs a **nearest-centroid
+(embedding-prototype) classifier** over the *same* embedding already computed for the cache:
+
+1. Build one **centroid** (L2-normalized mean embedding) per category from the seeded
+   `resolved_ticket` corpus — `db.resolved_label_embeddings()`, `lru_cache`d.
+2. Cosine-sim the ticket embedding to every centroid. Let `top_category = argmax`,
+   `assigned_sim = sim[llm_category]`, and `margin = sim_top1 − sim_top2`.
+3. Derive the level:
+   - **low** — the embedding *disagrees* with the LLM (`top_category ≠ llm_category`),
+     **or** `assigned_sim < CONF_LOW_SIM`.
+   - **high** — agrees **and** `assigned_sim ≥ CONF_HIGH_SIM` **and** `margin ≥ CONF_MARGIN`.
+   - **medium** — everything in between.
+
+A ticket is flagged **`needs_review = true`** when the level is `low` **or** the category is
 `unclassified` — the suggestion is kept (not hidden or rerouted), just marked for a human to
-confirm. Surfaced as `confidence` + `needs_review` in the `/classify` response, a warning on the
-Classify result, and a **"Needs review"** count + per-row flag on the Dashboard. (LLM
-self-reported confidence is indicative, not perfectly calibrated.)
+confirm. Surfaced as `confidence` + `needs_review` in the `/classify` response and as a
+**"Needs review"** count + per-row flag on the managing-team dashboard (hidden from the
+employee view). Thresholds are tunable via `CONF_HIGH_SIM` / `CONF_LOW_SIM` / `CONF_MARGIN`.
+Graceful degradation: if the corpus is unseeded or the embedding is unavailable, it returns
+`medium` and does not flag. (Conformal prediction is the documented next upgrade for
+distribution-free calibration.)
 
 ---
 
@@ -183,8 +216,8 @@ cd ~/Projects/krisis/krisis/v1.2 && ../.venv/bin/streamlit run streamlit_app.py
 ../.venv/bin/python scripts/backfill_embeddings.py # embed existing ticket_log rows for the cache (one-time)
 ```
 
-`run_demo.py` populates the DB so the dashboard's **Time saved** panel shows the before/after
-comparison (manual @ 5 min/ticket vs actual latency).
+`run_demo.py` populates the DB so the managing-team dashboard has real data (volumes, cost,
+category/priority breakdowns) to display.
 
 ## Cost tracking (v1.2)
 
@@ -202,12 +235,10 @@ the recent-tickets table. (Not shown on the employee Classify tab.)
   truncated to `MAX_TICKET_CHARS`.
 - **Run in production:** drop `--reload` and add workers, e.g.
   `../.venv/bin/uvicorn app.api:app --host 0.0.0.0 --port 8000 --workers 4`.
-- **Tests:** `../.venv/bin/pytest` (offline units + API; live LLM tests are `-m live`, deselected
-  by default).
-- **Migrations:** dev/tests auto-create the schema via `init_db()` (`create_all`). For production
-  use **Alembic**: `cd v1.2 && ../.venv/bin/alembic upgrade head` (initial revision creates
-  `ticket_log` + `resolved_ticket`). On an existing dev DB already created by `create_all`, run
-  `alembic stamp head` once to adopt Alembic without re-creating tables.
+- **Verification:** no unit-test framework — behavior is checked via the runnable scripts in
+  `scripts/` (see *Evaluation scripts*) plus offline import/compile checks.
+- **Schema:** `db.init_db()` creates the tables (`create_all`) and idempotently adds any newer
+  columns (`ADD COLUMN IF NOT EXISTS`), so a fresh or existing dev DB self-heals on startup.
 
 ## Eval mapping (`eval.txt`)
 
@@ -220,7 +251,7 @@ the recent-tickets table. (Not shown on the employee Classify tab.)
 | Angry / vague / ambiguous handled | Few-shot examples 1–3; demo tickets 7–9 |
 | Priority defensible | Impact × Urgency matrix + visible `impact`/`urgency` |
 | No hardcoded secrets | `.env` (git-ignored) + `.env.example` |
-| Before/after timing shown | `/timing` + dashboard "Time saved" panel |
+| Confidence / needs-review | Deterministic nearest-centroid margin (`app/confidence.py`) |
 | README to run it | this file |
 
 ## Troubleshooting

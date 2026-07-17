@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 
-from app import classifier, config, db, embeddings, retrieval
+from app import classifier, confidence, config, db, embeddings, retrieval
 from app.schema import ClassifyRequest, RoutedTicket
 
 logging.basicConfig(
@@ -110,6 +110,11 @@ def classify_endpoint(req: ClassifyRequest) -> RoutedTicket:
 
     # Cache miss -> classify with the LLM (classify() never raises; it falls back safely).
     routed, meta = classifier.classify(ticket)
+    # Deterministic confidence (embedding-prototype margin) — replaces LLM self-report.
+    if meta.get("ok") and embedding is not None:
+        res = confidence.assess(embedding, routed.category)
+        routed.confidence = res["level"]
+        routed.needs_review = res["level"] == "low" or routed.category == "unclassified"
     routed.similar_past = matches
     _log(ticket, routed, meta, embedding)
     return routed
@@ -127,15 +132,6 @@ def tickets_endpoint(limit: int = 50) -> dict:
 def stats_endpoint() -> dict:
     try:
         return db.stats()
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(status_code=503, detail=f"database unavailable: {e}")
-
-
-@app.get("/timing")
-def timing_endpoint() -> dict:
-    """Before/after: assumed manual triage time vs actual automated latency."""
-    try:
-        return db.timing(config.MANUAL_TRIAGE_SECONDS)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=503, detail=f"database unavailable: {e}")
 
